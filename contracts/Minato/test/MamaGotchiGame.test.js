@@ -118,4 +118,52 @@ describe("MamaGotchiGame Contract - Gotchi Points System", function () {
     ); // 10 cumulative Gotchi Points added
     expect(allTimeHighRound).to.be.at.least(updatedRoundPoints); // allTimeHighRound should be updated if roundPoints exceed it
   });
+
+  it("Should apply Gotchi Points penalty on MamaGotchi's death", async function () {
+    const mintCost = await game.mintCost();
+    const feedCost = await game.feedCost();
+
+    // Approve HAHA token spending for minting
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+
+    // Mint a MamaGotchi for addr1
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+
+    // Award some initial points by feeding
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+    await game.connect(addr1).feed(0);
+
+    // Record initial points before death
+    const initialCumulativePoints = BigInt(
+      await game.cumulativePoints(addr1.address)
+    );
+    const initialRoundPoints = BigInt(await game.roundPoints(addr1.address));
+    const deathPenalty = BigInt(await game.deathPenaltyPoints());
+
+    // Set health to zero to simulate death (using test helper or setHealthAndHappinessForTesting if available)
+    await game.connect(owner).setHealthAndHappinessForTesting(0, 0, 0); // Test helper function
+
+    // Trigger the setDeath function
+    await game.connect(owner).setDeath(0);
+
+    // Check points after death
+    const finalCumulativePoints = BigInt(
+      await game.cumulativePoints(addr1.address)
+    );
+    const finalRoundPoints = BigInt(await game.roundPoints(addr1.address));
+    const allTimeHighRound = BigInt(await game.allTimeHighRound(addr1.address));
+
+    // Assertions
+    expect(finalCumulativePoints).to.equal(
+      initialCumulativePoints > deathPenalty
+        ? initialCumulativePoints - deathPenalty
+        : BigInt(0)
+    ); // Ensure cumulative points decrease by penalty, or 0 if insufficient
+    expect(finalRoundPoints).to.equal(BigInt(0)); // roundPoints should reset to zero
+    expect(allTimeHighRound).to.equal(
+      initialRoundPoints > allTimeHighRound
+        ? initialRoundPoints
+        : allTimeHighRound
+    ); // allTimeHighRound should update if initialRoundPoints exceed it
+  });
 });

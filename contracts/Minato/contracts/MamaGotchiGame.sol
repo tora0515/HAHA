@@ -25,8 +25,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     uint256 public mintingPoints = 20; // GotchiPoints awarded for minting a MamaGotchi
     uint256 public feedingPoints = 10; // Points awarded for feeding a MamaGotchi
     uint256 public playingPoints = 10; // Points awarded for playing with a MamaGotchi
-
-
+    uint256 public deathPenaltyPoints = 30; // Points deducted from cumulative score on death
 
     IERC20 public hahaToken; // Reference to the $HAHA token contract
 
@@ -134,17 +133,6 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     }
 
     
-     /**
-     * @dev Sets the death timestamp for a MamaGotchi when its health or happiness reaches zero.
-     * Can only be called by the contract owner.
-     * @param tokenId The ID of the MamaGotchi to set as dead.
-     */
-    function setDeath(uint256 tokenId) external onlyOwner {
-        require(ownerOf(tokenId) != address(0), "Token does not exist");
-        Gotchi storage gotchi = gotchiStats[tokenId];
-        require(gotchi.health == 0 || gotchi.happiness == 0, "MamaGotchi isn't dead! Be a Good Kid and treat her well!");
-        gotchi.deathTimestamp = block.timestamp; 
-    }
 
     /**
      * @dev Checks if a MamaGotchi is currently alive, based on health and happiness levels.
@@ -154,6 +142,33 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     function isAlive(uint256 tokenId) public view returns (bool) {
         Gotchi memory gotchi = gotchiStats[tokenId];
         return gotchi.health > 0 && gotchi.happiness > 0;
+    }
+
+    /**
+    * @dev Sets the death timestamp for a MamaGotchi when its health or happiness reaches zero.
+    * Applies Gotchi Points penalties by updating all-time high round score if needed,
+    * deducting points from cumulativePoints, and resetting roundPoints.
+    * Can only be called by the contract owner.
+    * 
+    * @param tokenId The ID of the MamaGotchi to set as dead.
+    */
+    function setDeath(uint256 tokenId) external onlyOwner {
+        require(ownerOf(tokenId) != address(0), "Token does not exist");
+        Gotchi storage gotchi = gotchiStats[tokenId];
+        require(gotchi.health == 0 || gotchi.happiness == 0, "MamaGotchi isn't dead! Be a Good Kid and treat her well!");
+        
+        // Mark the MamaGotchi as dead
+        gotchi.deathTimestamp = block.timestamp;
+
+        // Apply Gotchi Points penalties
+        address player = ownerOf(tokenId);
+        if (roundPoints[player] > allTimeHighRound[player]) {
+            allTimeHighRound[player] = roundPoints[player];
+        }
+        cumulativePoints[player] = cumulativePoints[player] > deathPenaltyPoints
+            ? cumulativePoints[player] - deathPenaltyPoints
+            : 0; // Ensure cumulative points don’t go negative
+        roundPoints[player] = 0; // Reset round points
     }
 
     /**
