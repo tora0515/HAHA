@@ -215,4 +215,23 @@ describe("MamaGotchiGame Contract - Gotchi Points System", function () {
     expect(topAllTimeHighRound.score).to.equal(playerAllTimeHighRound);
     expect(topCumulativePoints.score).to.equal(playerCumulativePoints);
   });
+
+  it("Should skip leaderboard update when the score is zero", async function () {
+    // Fetch the initial leaderboard entry
+    const initialLeaderboardEntry = await game.topAllTimeHighRound(0);
+
+    // Call the test helper with a score of zero
+    await game.connect(owner).testUpdateLeaderboard(addr1.address, 0);
+
+    // Fetch the leaderboard entry again to check if it has remained unchanged
+    const updatedLeaderboardEntry = await game.topAllTimeHighRound(0);
+
+    // Verify leaderboard has not been updated with zero score
+    expect(updatedLeaderboardEntry.score).to.equal(
+      initialLeaderboardEntry.score
+    ); // Should remain unchanged
+    expect(updatedLeaderboardEntry.player).to.equal(
+      initialLeaderboardEntry.player
+    ); // Should remain unchanged
+  });
 });

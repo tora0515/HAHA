@@ -294,20 +294,27 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     LeaderboardEntry[10] public topCumulativePoints; // Top 10 for cumulative scores
 
     /**
-    * @dev Updates a leaderboard with a new score if it qualifies for the top 10.
-    * Inserts the score in the leaderboard, sorts, and removes the lowest score if necessary.
+    * @dev Updates a leaderboard with a player's new score if it qualifies for the top 10. 
+    * Skips updates when the player's score is zero.
+    * If the score qualifies, it is inserted into the leaderboard, sorted, and the lowest score 
+    * is removed to maintain only the top 10 entries.
     * 
     * @param leaderboard The leaderboard array (either topAllTimeHighRound or topCumulativePoints).
     * @param player The address of the player whose score is being considered.
-    * @param score The score to potentially add to the leaderboard.
+    * @param score The player's current score, which will be compared to existing leaderboard scores.
     */
+
     function updateLeaderboard(LeaderboardEntry[10] storage leaderboard, address player, uint256 score) internal {
-        // Check if the new score qualifies for the leaderboard
-        if (score > leaderboard[9].score) { // Compare with the lowest score in the leaderboard
-            leaderboard[9] = LeaderboardEntry(player, score); // Replace the lowest entry
-            sortLeaderboard(leaderboard); // Sort leaderboard by score in descending order
-        }
+    // Skip leaderboard update if score is zero
+    if (score == 0) return;
+
+    // Check if the new score qualifies for the leaderboard
+    if (score > leaderboard[9].score) { // Compare with the lowest score in the leaderboard
+        leaderboard[9] = LeaderboardEntry(player, score); // Replace the lowest entry
+        sortLeaderboard(leaderboard); // Sort leaderboard by score in descending order
     }
+}
+
 
     /**
     * @dev Sorts a leaderboard array in descending order by score.
@@ -409,10 +416,27 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
 
     // Helper function for testing purposes only. Remove before deployment.
 
+
+//#########################################################################
+//################## TESTING FUNCTIONS ####################################
+//#########################################################################
+
     //Test helper function to set health and happiness to zero for a specific Gotchi
     function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint256 happiness) external onlyOwner {
         gotchiStats[tokenId].health = health;
         gotchiStats[tokenId].happiness = happiness;
     }
+    
+    // Testing helper function to set round and cumulative points for a specific player
+    function setPointsForTesting(address player, uint256 round, uint256 cumulative) external onlyOwner {
+    roundPoints[player] = round;
+    cumulativePoints[player] = cumulative;
+    }
+
+    // TESTING ONLY: Helper function to test leaderboard updates with a specific score
+    function testUpdateLeaderboard(address player, uint256 score) external onlyOwner {
+        updateLeaderboard(topAllTimeHighRound, player, score);
+    }
+
 
 }
