@@ -24,6 +24,8 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     // Adjustable GootchiPoints 
     uint256 public mintingPoints = 20; // GotchiPoints awarded for minting a MamaGotchi
     uint256 public feedingPoints = 10; // Points awarded for feeding a MamaGotchi
+    uint256 public playingPoints = 10; // Points awarded for playing with a MamaGotchi
+
 
 
     IERC20 public hahaToken; // Reference to the $HAHA token contract
@@ -181,10 +183,13 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     }
 
     /**
-     * @dev Allows the player to play with their MamaGotchi, increasing happiness with a cooldown period.
-     * Requires the caller to be the owner of the token and to approve the spending of $HAHA tokens.
-     * @param tokenId The ID of the MamaGotchi to play with.
-     */
+    * @dev Allows the player to play with their MamaGotchi, increasing happiness with a cooldown period.
+    * Requires the caller to be the owner of the token and to approve the spending of $HAHA tokens.
+    * Awards `playingPoints` Gotchi Points to the player for each play interaction.
+    * Updates the player's all-time high round score if the new round score exceeds it.
+    *
+    * @param tokenId The ID of the MamaGotchi to play with.
+    */
     function play(uint256 tokenId) external {
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
@@ -194,6 +199,15 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
         
         gotchiStats[tokenId].happiness = gotchiStats[tokenId].happiness + 10 > 100 ? 100 : gotchiStats[tokenId].happiness + 10;
         gotchi.lastPlayTime = block.timestamp; // Update last play time
+
+        // Award Gotchi Points for playing
+        roundPoints[msg.sender] += playingPoints;
+        cumulativePoints[msg.sender] += playingPoints;
+
+        // Update all-time high round score if the new round score exceeds it
+        if (roundPoints[msg.sender] > allTimeHighRound[msg.sender]) {
+            allTimeHighRound[msg.sender] = roundPoints[msg.sender];
+        }
     }
 
    /**
@@ -295,6 +309,15 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     */
     function setFeedingPoints(uint256 newFeedingPoints) external onlyOwner {
         feedingPoints = newFeedingPoints;
+    }
+
+    /**
+    * @dev Updates the points awarded for playing with a MamaGotchi.
+    * Can only be called by the contract owner.
+    * @param newPlayingPoints The new number of points awarded for playing.
+    */
+    function setPlayingPoints(uint256 newPlayingPoints) external onlyOwner {
+        playingPoints = newPlayingPoints;
     }
 
     /**

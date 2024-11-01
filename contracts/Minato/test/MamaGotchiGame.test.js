@@ -81,4 +81,41 @@ describe("MamaGotchiGame Contract - Gotchi Points System", function () {
     ); // 10 cumulative Gotchi Points added
     expect(allTimeHighRound).to.be.at.least(updatedRoundPoints); // allTimeHighRound should be updated if roundPoints exceed it
   });
+
+  it("Should award Gotchi Points to player on playing with their MamaGotchi", async function () {
+    const playCost = await game.playCost();
+    const mintCost = await game.mintCost();
+
+    // Approve HAHA token spending for minting
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+
+    // Mint a MamaGotchi to enable playing
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+
+    // Approve HAHA token spending for playing
+    await hahaToken.connect(addr1).approve(game.target, playCost);
+
+    // Record initial Gotchi Points balances
+    const initialRoundPoints = BigInt(await game.roundPoints(addr1.address));
+    const initialCumulativePoints = BigInt(
+      await game.cumulativePoints(addr1.address)
+    );
+
+    // Play with the MamaGotchi (tokenId is 0, as it’s the first one minted)
+    await game.connect(addr1).play(0);
+
+    // Check Gotchi Points awarded to addr1 after playing
+    const updatedRoundPoints = BigInt(await game.roundPoints(addr1.address));
+    const updatedCumulativePoints = BigInt(
+      await game.cumulativePoints(addr1.address)
+    );
+    const allTimeHighRound = BigInt(await game.allTimeHighRound(addr1.address));
+
+    // Verify that playing added the expected amount of Gotchi Points
+    expect(updatedRoundPoints).to.equal(initialRoundPoints + BigInt(10)); // 10 Gotchi Points added for playing
+    expect(updatedCumulativePoints).to.equal(
+      initialCumulativePoints + BigInt(10)
+    ); // 10 cumulative Gotchi Points added
+    expect(allTimeHighRound).to.be.at.least(updatedRoundPoints); // allTimeHighRound should be updated if roundPoints exceed it
+  });
 });
