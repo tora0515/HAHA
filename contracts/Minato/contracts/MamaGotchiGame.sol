@@ -40,8 +40,8 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     uint256 lastFeedTime;
     uint256 lastPlayTime;
     uint256 lastSleepTime;
-}
-
+    }
+    
     mapping(uint256 => Gotchi) public gotchiStats; // Mapping from tokenId to Gotchi stats
 
     // Points tracking variables
@@ -49,7 +49,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     mapping(address => uint256) public cumulativePoints; // Total points accumulated across all rounds
     mapping(address => uint256) public allTimeHighRound; // Highest score in a single round
 
-
+    
     constructor(address initialOwner, address hahaTokenAddress) 
         ERC721("MamaGotchiMinato", "MGM") 
         Ownable(initialOwner) 
@@ -148,7 +148,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     * @dev Sets the death timestamp for a MamaGotchi when its health or happiness reaches zero.
     * Applies Gotchi Points penalties by updating all-time high round score if needed,
     * deducting points from cumulativePoints, and resetting roundPoints.
-    * Can only be called by the contract owner.
+    * Updates both allTimeHighRound and cumulativePoints leaderboards if scores qualify.
     * 
     * @param tokenId The ID of the MamaGotchi to set as dead.
     */
@@ -169,6 +169,10 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
             ? cumulativePoints[player] - deathPenaltyPoints
             : 0; // Ensure cumulative points don’t go negative
         roundPoints[player] = 0; // Reset round points
+
+         // Update leaderboards with all-time high round score and cumulative points
+        updateLeaderboard(topAllTimeHighRound, player, allTimeHighRound[player]);
+        updateLeaderboard(topCumulativePoints, player, cumulativePoints[player]);
     }
 
     /**
@@ -235,20 +239,20 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
      */
 
     function sleep(uint256 tokenId) external {
-    require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-    require(!gotchiStats[tokenId].isSleeping, "MamaGotchi is already sleeping!");
+        require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+        require(!gotchiStats[tokenId].isSleeping, "MamaGotchi is already sleeping!");
 
-    // Check if the cooldown period has elapsed
-    require(
-        block.timestamp >= gotchiStats[tokenId].lastSleepTime + SLEEP_COOLDOWN,
-        "MamaGotchi isn't tired now!"
-    );
+        // Check if the cooldown period has elapsed
+        require(
+            block.timestamp >= gotchiStats[tokenId].lastSleepTime + SLEEP_COOLDOWN,
+            "MamaGotchi isn't tired now!"
+        );
 
-    // Set the sleep state and timestamp
-    gotchiStats[tokenId].isSleeping = true;
-    gotchiStats[tokenId].sleepStartTime = block.timestamp;
-    gotchiStats[tokenId].lastSleepTime = block.timestamp; // Update the lastSleepTime with the current time
-}
+        // Set the sleep state and timestamp
+        gotchiStats[tokenId].isSleeping = true;
+        gotchiStats[tokenId].sleepStartTime = block.timestamp;
+        gotchiStats[tokenId].lastSleepTime = block.timestamp; // Update the lastSleepTime with the current time
+    }
 
     /**
      * @dev Wakes the MamaGotchi from sleep, calculating and applying the decay rates for health and happiness.
@@ -278,6 +282,52 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
         // Reset sleep state
         gotchiStats[tokenId].isSleeping = false;
         gotchiStats[tokenId].sleepStartTime = 0;
+    }
+
+    // Leaderboard Struct and Arrays
+    struct LeaderboardEntry {
+        address player;
+        uint256 score;
+    }
+
+    LeaderboardEntry[10] public topAllTimeHighRound; // Top 10 for all-time high round scores
+    LeaderboardEntry[10] public topCumulativePoints; // Top 10 for cumulative scores
+
+    /**
+    * @dev Updates a leaderboard with a new score if it qualifies for the top 10.
+    * Inserts the score in the leaderboard, sorts, and removes the lowest score if necessary.
+    * 
+    * @param leaderboard The leaderboard array (either topAllTimeHighRound or topCumulativePoints).
+    * @param player The address of the player whose score is being considered.
+    * @param score The score to potentially add to the leaderboard.
+    */
+    function updateLeaderboard(LeaderboardEntry[10] storage leaderboard, address player, uint256 score) internal {
+        // Check if the new score qualifies for the leaderboard
+        if (score > leaderboard[9].score) { // Compare with the lowest score in the leaderboard
+            leaderboard[9] = LeaderboardEntry(player, score); // Replace the lowest entry
+            sortLeaderboard(leaderboard); // Sort leaderboard by score in descending order
+        }
+    }
+
+    /**
+    * @dev Sorts a leaderboard array in descending order by score.
+    * Uses bubble sort for simplicity, as the array length is fixed and small.
+    * 
+    * @param leaderboard The leaderboard array to sort.
+    */
+    function sortLeaderboard(LeaderboardEntry[10] storage leaderboard) internal {
+        for (uint256 i = 0; i < leaderboard.length - 1; i++) {
+            for (uint256 j = i + 1; j < leaderboard.length; j++) {
+                if (leaderboard[j].score > leaderboard[i].score) {
+                    // Use temporary storage pointers to swap entries safely
+                    LeaderboardEntry storage entryI = leaderboard[i];
+                    LeaderboardEntry storage entryJ = leaderboard[j];
+
+                    (entryI.player, entryJ.player) = (entryJ.player, entryI.player);
+                    (entryI.score, entryJ.score) = (entryJ.score, entryI.score);
+                }
+            }
+        }            
     }
 
     /**

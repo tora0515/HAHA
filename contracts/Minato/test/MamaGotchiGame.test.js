@@ -166,4 +166,53 @@ describe("MamaGotchiGame Contract - Gotchi Points System", function () {
         : allTimeHighRound
     ); // allTimeHighRound should update if initialRoundPoints exceed it
   });
+
+  it("Should update leaderboards with player's scores on MamaGotchi's death", async function () {
+    const mintCost = await game.mintCost();
+    const feedCost = await game.feedCost();
+    const feedCooldown = await game.FEED_COOLDOWN(); // Retrieve the cooldown duration for feeding
+
+    // Approve HAHA token spending for minting and mint a MamaGotchi for addr1
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+
+    // Feed MamaGotchi multiple times, simulating time passing for cooldown
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+    await game.connect(addr1).feed(0); // First feed
+
+    // Increase time to bypass the cooldown
+    await ethers.provider.send("evm_increaseTime", [Number(feedCooldown)]);
+    await ethers.provider.send("evm_mine"); // Mine a new block
+
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+    await game.connect(addr1).feed(0); // Second feed
+
+    // Increase time to bypass the cooldown again
+    await ethers.provider.send("evm_increaseTime", [Number(feedCooldown)]);
+    await ethers.provider.send("evm_mine"); // Mine a new block
+
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+    await game.connect(addr1).feed(0); // Third feed
+
+    // Set health to zero to simulate death (using test helper or setHealthAndHappinessForTesting if available)
+    await game.connect(owner).setHealthAndHappinessForTesting(0, 0, 0); // Test helper function
+
+    // Trigger the setDeath function
+    await game.connect(owner).setDeath(0);
+
+    // Fetch the leaderboards after death
+    const topAllTimeHighRound = await game.topAllTimeHighRound(0);
+    const topCumulativePoints = await game.topCumulativePoints(0);
+
+    // Verify that addr1's score is on both leaderboards
+    expect(topAllTimeHighRound.player).to.equal(addr1.address);
+    expect(topCumulativePoints.player).to.equal(addr1.address);
+
+    // Check if the scores match addr1's current allTimeHighRound and cumulativePoints
+    const playerAllTimeHighRound = await game.allTimeHighRound(addr1.address);
+    const playerCumulativePoints = await game.cumulativePoints(addr1.address);
+
+    expect(topAllTimeHighRound.score).to.equal(playerAllTimeHighRound);
+    expect(topCumulativePoints.score).to.equal(playerCumulativePoints);
+  });
 });
