@@ -10,38 +10,54 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     uint256 private _nextTokenId;
-    uint256 public constant FEED_COOLDOWN = 10 * 60; // 10-minute cooldown for feeding
-    uint256 public constant PLAY_COOLDOWN = 15 * 60; // 15-minute cooldown for playing
-    uint256 public constant MAX_SLEEP_DURATION = 8 * 60 * 60; // 8 hours in seconds
-    uint256 public constant SLEEP_COOLDOWN = 1 * 60 * 60; // 1 hour cooldown in seconds
 
-    uint256 public constant HEALTH_DECAY_RATE = 550; // 5.5 points per hour, scaled to avoid decimals
-    uint256 public constant HAPPINESS_DECAY_RATE = 416; // 4.16 points per hour, scaled to avoid decimals
+    // Cooldown durations in seconds
+    struct GotchiCooldowns {
+        uint256 feed;
+        uint256 play;
+        uint256 sleep;
+    }
+
+    GotchiCooldowns public cooldowns = GotchiCooldowns({
+        feed: 10 * 60,     // 10-minute cooldown for feeding
+        play: 15 * 60,     // 15-minute cooldown for playing
+        sleep: 1 * 60 * 60 // 1-hour cooldown for sleep
+    });
+
+    // Constants for gameplay mechanics (remain fixed)
+    uint256 public constant MAX_SLEEP_DURATION = 8 * 60 * 60; // 8 hours
+    uint256 public constant HEALTH_DECAY_RATE = 550;          // 5.5 points/hour
+    uint256 public constant HAPPINESS_DECAY_RATE = 416;       // 4.16 points/hour
 
     // Adjustable costs in $HAHA tokens
     uint256 public mintCost;
     uint256 public feedCost;
     uint256 public playCost;
 
-    // Adjustable GootchiPoints 
-    uint256 public mintingPoints = 20; // GotchiPoints awarded for minting a MamaGotchi
-    uint256 public feedingPoints = 10; // Points awarded for feeding a MamaGotchi
-    uint256 public playingPoints = 10; // Points awarded for playing with a MamaGotchi
-    uint256 public deathPenaltyPoints = 30; // Points deducted from cumulative score on death
-      
+    // Points structure for gameplay interactions
+    struct GotchiPoints {
+        uint256 minting;
+        uint256 feeding;
+        uint256 playing;
+        uint256 deathPenalty;
+    }
+
+    GotchiPoints public points = GotchiPoints({
+        minting: 20,           // Points awarded for minting
+        feeding: 10,           // Points awarded for feeding
+        playing: 10,           // Points awarded for playing
+        deathPenalty: 30       // Points deducted on death
+    });
+
     IERC20 public hahaToken; // Reference to the $HAHA token contract
 
     LeaderboardEntry[10] public topAllTimeHighRound; // Top 10 for all-time high round scores
-    LeaderboardEntry[10] public topCumulativePoints; // Top 10 for cumulative scores
+    LeaderboardEntry[10] public topCumulativePoints;  // Top 10 for cumulative scores
 
-    mapping(uint256 => Gotchi) public gotchiStats; // Mapping from tokenId to Gotchi stats
-    // Points tracking variables
-    mapping(address => uint256) public roundPoints; // Points accumulated in the current round
-    mapping(address => uint256) public cumulativePoints; // Total points accumulated across all rounds
-    mapping(address => uint256) public allTimeHighRound; // Highest score in a single round
-  
-    // Represents a single MamaGotchi's core attributes and state.
-    // Tracks health, happiness, sleep state, and activity timestamps.
+    mapping(uint256 => Gotchi) public gotchiStats; 
+    mapping(address => PlayerStats) public playerStats;
+
+    // Represents a single MamaGotchi's core attributes and state
     struct Gotchi {
         uint256 health;
         uint256 happiness;
@@ -53,13 +69,20 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         uint256 lastSleepTime;
     }
 
-     // Leaderboard Struct and Arrays
+    // Leaderboard Struct
     struct LeaderboardEntry {
         address player;
         uint256 score;
     }
 
-    // Event definitions (place them here)
+    // Player Stats
+    struct PlayerStats {
+        uint256 roundPoints;
+        uint256 cumulativePoints;
+        uint256 allTimeHighRound;
+    }
+
+    // Event definitions
     event GotchiMinted(address indexed player, uint256 tokenId, uint256 mintingPoints);
     event GotchiFed(address indexed player, uint256 tokenId, uint256 feedingPoints);
     event GotchiPlayed(address indexed player, uint256 tokenId, uint256 playingPoints);
@@ -70,6 +93,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     event CostUpdated(string costType, uint256 newValue);
     event PointsUpdated(string pointsType, uint256 newValue);
     event DecayCalculated(uint256 healthDecay, uint256 happinessDecay);
+
 
     constructor(address initialOwner, address hahaTokenAddress) 
         ERC721("MamaGotchiMinato", "MGM") 
@@ -144,16 +168,16 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         gotchiStats[newTokenId] = Gotchi(80, 80, 0, false, 0, 0, 0,0); // Initialize health, happiness, deathTimestamp, isSleeping, sleepStartTime, lastFeedTime, and lastPlayTime
 
         // Award points for minting
-        roundPoints[to] += mintingPoints;
-        cumulativePoints[to] += mintingPoints;
+        playerStats[to].roundPoints += points.minting;
+        playerStats[to].cumulativePoints += points.minting;
 
         // Update all-time high round score if the new round score exceeds it
-        if (roundPoints[to] > allTimeHighRound[to]) {
-            allTimeHighRound[to] = roundPoints[to];
+        if (playerStats[to].roundPoints > playerStats[to].allTimeHighRound) {
+            playerStats[to].allTimeHighRound = playerStats[to].roundPoints;
         }
 
         // Emit GotchiMinted event
-         emit GotchiMinted(to, newTokenId, mintingPoints);
+        emit GotchiMinted(to, newTokenId, points.minting);
     }
 
     /** @dev Checks if a MamaGotchi is currently alive, based on health and happiness levels.
@@ -177,27 +201,24 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         require(ownerOf(tokenId) != address(0), "Token does not exist");
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(gotchi.health == 0 || gotchi.happiness == 0, "MamaGotchi isn't dead! Be a Good Kid and treat her well!");
-        
-        // Mark the MamaGotchi as dead
+
         gotchi.deathTimestamp = block.timestamp;
 
-        // Apply Gotchi Points penalties
         address player = ownerOf(tokenId);
-        if (roundPoints[player] > allTimeHighRound[player]) {
-            allTimeHighRound[player] = roundPoints[player];
+        if (playerStats[player].roundPoints > playerStats[player].allTimeHighRound) {
+            playerStats[player].allTimeHighRound = playerStats[player].roundPoints;
         }
-        cumulativePoints[player] = cumulativePoints[player] > deathPenaltyPoints
-            ? cumulativePoints[player] - deathPenaltyPoints
-            : 0; // Ensure cumulative points don’t go negative
-        roundPoints[player] = 0; // Reset round points
+        playerStats[player].cumulativePoints = playerStats[player].cumulativePoints > points.deathPenalty
+        ? playerStats[player].cumulativePoints - points.deathPenalty 
+        : 0;
 
-          // Emit GotchiDied event
-        emit GotchiDied(player, tokenId, deathPenaltyPoints);
+        playerStats[player].roundPoints = 0; // Reset round points
 
-         // Update leaderboards with all-time high round score and cumulative points
-        updateLeaderboard(topAllTimeHighRound, player, allTimeHighRound[player], "AllTimeHighRound");
-        updateLeaderboard(topCumulativePoints, player, cumulativePoints[player], "CumulativePoints");
-    }
+        emit GotchiDied(player, tokenId, points.deathPenalty);
+
+        updateLeaderboard(topAllTimeHighRound, player, playerStats[player].allTimeHighRound, "AllTimeHighRound");
+        updateLeaderboard(topCumulativePoints, player, playerStats[player].cumulativePoints, "CumulativePoints");
+     }
 
     /**
      * @dev Feeds the MamaGotchi, increasing health by a fixed amount, with a cooldown period.
@@ -209,22 +230,19 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(hahaToken.allowance(msg.sender, address(this)) >= feedCost, "Approval required for feeding");
         require(hahaToken.transferFrom(msg.sender, address(this), feedCost), "Feeding requires $HAHA tokens");
-        require(block.timestamp >= gotchi.lastFeedTime + FEED_COOLDOWN, "MamaGotchi isn't hungry!");
+        require(block.timestamp >= gotchi.lastFeedTime + cooldowns.feed, "MamaGotchi isn't hungry!");
 
         gotchiStats[tokenId].health = gotchiStats[tokenId].health + 10 > 100 ? 100 : gotchiStats[tokenId].health + 10;
-        gotchi.lastFeedTime = block.timestamp; // Update last feed time
+        gotchi.lastFeedTime = block.timestamp;
 
-        // Award Gotchi Points for feeding
-        roundPoints[msg.sender] += feedingPoints;
-        cumulativePoints[msg.sender] += feedingPoints;
+        playerStats[msg.sender].roundPoints += points.feeding;
+        playerStats[msg.sender].cumulativePoints += points.feeding;
 
-        // Update all-time high round score if the new round score exceeds it
-        if (roundPoints[msg.sender] > allTimeHighRound[msg.sender]) {
-            allTimeHighRound[msg.sender] = roundPoints[msg.sender];
+        if (playerStats[msg.sender].roundPoints > playerStats[msg.sender].allTimeHighRound) {
+            playerStats[msg.sender].allTimeHighRound = playerStats[msg.sender].roundPoints;
         }
-        
-        // Emit GotchiFed event
-        emit GotchiFed(msg.sender, tokenId, feedingPoints);
+
+        emit GotchiFed(msg.sender, tokenId, points.feeding);
     }
 
     /**
@@ -240,22 +258,19 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(hahaToken.allowance(msg.sender, address(this)) >= playCost, "Approval required for playing");
         require(hahaToken.transferFrom(msg.sender, address(this), playCost), "Playing requires $HAHA tokens");
-        require(block.timestamp >= gotchi.lastPlayTime + PLAY_COOLDOWN, "MamaGotchi doesn't want to play now!");
-        
+        require(block.timestamp >= gotchi.lastPlayTime + cooldowns.play, "MamaGotchi doesn't want to play now!");
+
         gotchiStats[tokenId].happiness = gotchiStats[tokenId].happiness + 10 > 100 ? 100 : gotchiStats[tokenId].happiness + 10;
-        gotchi.lastPlayTime = block.timestamp; // Update last play time
+        gotchi.lastPlayTime = block.timestamp;
 
-        // Award Gotchi Points for playing
-        roundPoints[msg.sender] += playingPoints;
-        cumulativePoints[msg.sender] += playingPoints;
+        playerStats[msg.sender].roundPoints += points.playing;
+        playerStats[msg.sender].cumulativePoints += points.playing;
 
-        // Update all-time high round score if the new round score exceeds it
-        if (roundPoints[msg.sender] > allTimeHighRound[msg.sender]) {
-            allTimeHighRound[msg.sender] = roundPoints[msg.sender];
+        if (playerStats[msg.sender].roundPoints > playerStats[msg.sender].allTimeHighRound) {
+            playerStats[msg.sender].allTimeHighRound = playerStats[msg.sender].roundPoints;
         }
 
-        // Emit GotchiPlayed event
-        emit GotchiPlayed(msg.sender, tokenId, playingPoints);
+        emit GotchiPlayed(msg.sender, tokenId, points.playing);
     }
 
    /**
@@ -273,7 +288,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
 
         // Check if the cooldown period has elapsed
         require(
-            block.timestamp >= gotchiStats[tokenId].lastSleepTime + SLEEP_COOLDOWN,
+            block.timestamp >= gotchiStats[tokenId].lastSleepTime + cooldowns.sleep,
             "MamaGotchi isn't tired now!"
         );
 
@@ -321,7 +336,8 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         emit GotchiAwake(msg.sender, tokenId, healthDecay, happinessDecay);
     }
 
-    /** @dev Updates a leaderboard with a player's new score if it qualifies for the top 10. 
+    /** 
+    * @dev Updates a leaderboard with a player's new score if it qualifies for the top 10. 
     * Skips updates when the player's score is zero.
     * If the score qualifies, it is inserted into the leaderboard, sorted, and the lowest score 
     * is removed to maintain only the top 10 entries.
@@ -349,7 +365,8 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         }
     }
 
-    /** @dev Sorts a leaderboard array in descending order by score.
+    /**
+    * @dev Sorts a leaderboard array in descending order by score.
     * Uses bubble sort for simplicity, as the array length is fixed and small.
     * 
     * @param leaderboard The leaderboard array to sort.
@@ -404,9 +421,10 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     * @param newMintingPoints The new number of points awarded for minting.
     */
     function setMintingPoints(uint256 newMintingPoints) external onlyOwner {
-        mintingPoints = newMintingPoints;
+        points.minting = newMintingPoints;
         emit PointsUpdated("MintingPoints", newMintingPoints);
     }
+
 
     /**
     * @dev Updates the points awarded for feeding a MamaGotchi.
@@ -414,9 +432,10 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     * @param newFeedingPoints The new number of points awarded for feeding.
     */
     function setFeedingPoints(uint256 newFeedingPoints) external onlyOwner {
-        feedingPoints = newFeedingPoints;
+        points.feeding = newFeedingPoints;
         emit PointsUpdated("FeedingPoints", newFeedingPoints);
     }
+
 
     /**
     * @dev Updates the points awarded for playing with a MamaGotchi.
@@ -424,9 +443,10 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     * @param newPlayingPoints The new number of points awarded for playing.
     */
     function setPlayingPoints(uint256 newPlayingPoints) external onlyOwner {
-        playingPoints = newPlayingPoints;
+        points.playing = newPlayingPoints;
         emit PointsUpdated("PlayingPoints", newPlayingPoints);
     }
+
 
     /**
      * @dev Calculates the health decay based on the time elapsed since last sleep.
@@ -482,23 +502,19 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     
     // Testing helper function to set round and cumulative points for a specific player
     function setPointsForTesting(address player, uint256 round, uint256 cumulative) external onlyOwner {
-    roundPoints[player] = round;
-    cumulativePoints[player] = cumulative;
+        playerStats[player].roundPoints = round;
+        playerStats[player].cumulativePoints = cumulative;
     }
+
 
     // TESTING ONLY: Helper function to test leaderboard updates with a specific score and leaderboard type
-function testUpdateLeaderboard(address player, uint256 score, string memory leaderboardType) external onlyOwner {
-    if (keccak256(bytes(leaderboardType)) == keccak256(bytes("AllTimeHighRound"))) {
-        updateLeaderboard(topAllTimeHighRound, player, score, leaderboardType);
-    } else if (keccak256(bytes(leaderboardType)) == keccak256(bytes("CumulativePoints"))) {
-        updateLeaderboard(topCumulativePoints, player, score, leaderboardType);
-    } else {
-        revert("Invalid leaderboard type");
+    function testUpdateLeaderboard(address player, uint256 score, string memory leaderboardType) external onlyOwner {
+        if (keccak256(bytes(leaderboardType)) == keccak256(bytes("AllTimeHighRound"))) {
+            updateLeaderboard(topAllTimeHighRound, player, score, leaderboardType);
+        } else if (keccak256(bytes(leaderboardType)) == keccak256(bytes("CumulativePoints"))) {
+            updateLeaderboard(topCumulativePoints, player, score, leaderboardType);
+        } else {
+            revert("Invalid leaderboard type");
+        }
     }
-}
-
-
-
-
-
 }

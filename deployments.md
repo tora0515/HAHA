@@ -10,7 +10,7 @@ This document records details of each deployment of the HAHA Token and GotchiPoi
 **Network**: Minato Testnet  
 **Token Address**: 0xDD735ad642e188d595E17236628e5d4aFA2DBab7
 **Deployer Address**: 0x1adAF26F6440ab7D7a237b49e1ceEf58f45F902a
-**Explorer Link**: [View on Minato Explorer](https://explorer-testnet.soneium.org/address/0xDD735ad642e188d595E17236628e5d4aFA2DBab7)  
+**Explorer Link**: [View on Minato Explorer](https://soneium-minato.blockscout.com/token/0xDD735ad642e188d595E17236628e5d4aFA2DBab7)  
 **Initial Supply**: 100 trillion HAHA tokens  
 **Gas Used**: Transaction gas used (retrieved from the transaction receipt)
 
