@@ -450,6 +450,23 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         return (duration * HAPPINESS_DECAY_RATE) / (3600 * 100); // Converts to 4.16 points per hour
     }
 
+    /**
+    * @dev Returns the top entries in the All-Time High Round leaderboard.
+    * @return LeaderboardEntry[] The array of top 10 leaderboard entries.
+    */
+    function getTopAllTimeHighRoundLeaderboard() external view returns (LeaderboardEntry[10] memory) {
+        return topAllTimeHighRound;
+    }
+
+    /**
+    * @dev Returns the top entries in the Cumulative Points leaderboard.
+    * @return LeaderboardEntry[] The array of top 10 leaderboard entries.
+    */
+    function getTopCumulativePointsLeaderboard() external view returns (LeaderboardEntry[10] memory) {
+        return topCumulativePoints;
+    }
+
+
     // Helper function for testing purposes only. Remove before deployment.
 
 

@@ -1,5 +1,5 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, parseEther } = require("hardhat");
 
 describe("MamaGotchiGame Contract - Gotchi Points System", function () {
   let MamaGotchiGame, hahaToken, game, owner, addr1;
@@ -494,6 +494,32 @@ describe("MamaGotchiGame Contract - Gotchi Points System", function () {
       await expect(game.connect(addr1).play(0))
         .to.emit(game, "GotchiPlayed")
         .withArgs(addr1.address, 0, await game.playingPoints());
+    });
+  });
+
+  describe("MamaGotchiGame Contract - Leaderboard Access", function () {
+    let game, hahaToken, owner, addr1;
+
+    before(async function () {
+      [owner, addr1] = await ethers.getSigners();
+
+      const HAHA = await ethers.getContractFactory("HAHAMinatoTestnetToken");
+      hahaToken = await HAHA.deploy();
+      await hahaToken.waitForDeployment();
+
+      const MamaGotchiGame = await ethers.getContractFactory("MamaGotchiGame");
+      game = await MamaGotchiGame.deploy(owner.address, hahaToken.target);
+      await game.waitForDeployment();
+    });
+
+    it("Should retrieve the top 10 All-Time High Round scores", async function () {
+      const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
+      expect(leaderboard).to.be.an("array").with.lengthOf(10);
+    });
+
+    it("Should retrieve the top 10 Cumulative Points scores", async function () {
+      const leaderboard = await game.getTopCumulativePointsLeaderboard();
+      expect(leaderboard).to.be.an("array").with.lengthOf(10);
     });
   });
 });
