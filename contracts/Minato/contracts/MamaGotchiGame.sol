@@ -142,15 +142,19 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     }
 
     /**
-    * @dev Allows the minting of a new MamaGotchi NFT, optionally burning an old one if specified.
-    * Requires approval and transfer of $HAHA tokens from the caller to cover the minting cost.
-    * Initializes health and happiness of the new MamaGotchi, and awards Gotchi Points to the player.
-    * 
-    * Awards `mintingPoints` Gotchi Points for minting a new MamaGotchi.
-    * Updates the player's all-time high round score if their new round score exceeds it.
-    * 
+    * @dev Mints a new MamaGotchi NFT for the specified address. Optionally burns an old token if provided.
+    * Requires the caller to have approved the contract to transfer the `mintCost` in $HAHA tokens.
+    * Initializes new Gotchi with default health and happiness.
+    * Awards points for minting and updates the player's high score if applicable.
+    * Emits a GotchiMinted event with details of the new token and awarded points.
+    *
+    * Requirements:
+    * - `tokenIdToBurn` must be owned by the caller (if provided) and must be deceased (health and happiness at zero).
+    * - The caller must approve the transfer of `mintCost` in $HAHA tokens.
+    * - The recipient address `to` must not be the zero address.
+    *
     * @param to The address to receive the newly minted MamaGotchi.
-    * @param tokenIdToBurn The ID of the MamaGotchi to be burned (set to 0 if not applicable).
+    * @param tokenIdToBurn (Optional) The ID of the MamaGotchi to burn (0 if no token is burned).
     */
     function mintNewGotchi(address to, uint256 tokenIdToBurn) external nonReentrant {
         if (tokenIdToBurn != 0) {
@@ -180,21 +184,44 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         emit GotchiMinted(to, newTokenId, points.minting);
     }
 
-    /** @dev Checks if a MamaGotchi is currently alive, based on health and happiness levels.
-     * @param tokenId The ID of the MamaGotchi to check.
-     * @return True if the MamaGotchi is alive (health and happiness > 0), otherwise false.
-     */
-    function isAlive(uint256 tokenId) public view returns (bool) {
-        Gotchi memory gotchi = gotchiStats[tokenId];
-        return gotchi.health > 0 && gotchi.happiness > 0;
+    /**
+    * @dev Checks if a given MamaGotchi's health or happiness has reached zero.
+    * If either is zero, the function updates the Gotchi's `deathTimestamp`.
+    * This function is called internally within gameplay interactions (e.g., `feed`, `play`, `wake`) to
+    * automatically mark a Gotchi as deceased when necessary.
+    *
+    * @param tokenId The ID of the MamaGotchi to evaluate.
+    */
+    function checkAndMarkDeath(uint256 tokenId) internal {
+        Gotchi storage gotchi = gotchiStats[tokenId];
+        if (gotchi.health == 0 || gotchi.happiness == 0) {
+            gotchi.deathTimestamp = block.timestamp;
+        }
     }
 
     /**
-    * @dev Sets the death timestamp for a MamaGotchi when its health or happiness reaches zero.
-    * Applies Gotchi Points penalties by updating all-time high round score if needed,
-    * deducting points from cumulativePoints, and resetting roundPoints.
-    * Updates both allTimeHighRound and cumulativePoints leaderboards if scores qualify.
-    * 
+    * @dev Checks if a MamaGotchi is alive based on health, happiness, and `deathTimestamp`.
+    * Returns `true` if both health and happiness are greater than zero, and `deathTimestamp` is unset.
+    * Used in gameplay functions to ensure interactions are only possible with living Gotchis.
+    *
+    * @param tokenId The ID of the MamaGotchi to check.
+    * @return True if the MamaGotchi is alive, false otherwise.
+    */
+    function isAlive(uint256 tokenId) public view returns (bool) {
+        Gotchi memory gotchi = gotchiStats[tokenId];
+        return (gotchi.deathTimestamp == 0 && gotchi.health > 0 && gotchi.happiness > 0);
+    }
+    
+    /**
+    * @dev Marks a MamaGotchi as deceased by setting its `deathTimestamp`.
+    * Applies point penalties, updates the player’s leaderboard standings, and resets the round points.
+    * Only callable by the contract owner, typically during administrative checks or game resets.
+    * Emits a GotchiDied event if the Gotchi is marked as dead.
+    *
+    * Requirements:
+    * - Gotchi’s health or happiness must be zero.
+    * - Caller must be the contract owner.
+    *
     * @param tokenId The ID of the MamaGotchi to set as dead.
     */
     function setDeath(uint256 tokenId) external onlyOwner nonReentrant {
@@ -221,75 +248,107 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
      }
 
     /**
-     * @dev Feeds the MamaGotchi, increasing health by a fixed amount, with a cooldown period.
-     * Requires the caller to be the owner of the token and to approve the spending of $HAHA tokens.
-     * @param tokenId The ID of the MamaGotchi to feed.
-     */
+    * @dev Feeds MamaGotchi, increasing its health by a fixed amount. Requires cooldown period
+    * to have elapsed since the last feeding. Only the token owner can initiate feeding.
+    * Emits a GotchiFed event with feeding points.
+    *
+    * Requirements:
+    * - Caller must be the owner of the token.
+    * - Token must be approved for feeding cost in $HAHA.
+    * - Cooldown must have elapsed since the last feed.
+    *
+    * @param tokenId The ID of the MamaGotchi being fed.
+    */
     function feed(uint256 tokenId) external nonReentrant {
+        require(isAlive(tokenId), "MamaGotchi isn't alive!");
+        checkAndMarkDeath(tokenId);
+
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(hahaToken.allowance(msg.sender, address(this)) >= feedCost, "Approval required for feeding");
         require(hahaToken.transferFrom(msg.sender, address(this), feedCost), "Feeding requires $HAHA tokens");
-        require(block.timestamp >= gotchi.lastFeedTime + cooldowns.feed, "MamaGotchi isn't hungry!");
+        require(block.timestamp >= gotchi.lastFeedTime + cooldowns.feed, "MamaGotchi says: I'm full!");
 
-        gotchiStats[tokenId].health = gotchiStats[tokenId].health + 10 > 100 ? 100 : gotchiStats[tokenId].health + 10;
+        gotchi.health = gotchi.health + 10 > 100 ? 100 : gotchi.health + 10;
         gotchi.lastFeedTime = block.timestamp;
 
-        playerStats[msg.sender].roundPoints += points.feeding;
-        playerStats[msg.sender].cumulativePoints += points.feeding;
+        // Use a local variable to manage points before re-assigning
+        PlayerStats memory playerStatsTemp = playerStats[msg.sender];
+        playerStatsTemp.roundPoints += points.feeding;
+        playerStatsTemp.cumulativePoints += points.feeding;
 
-        if (playerStats[msg.sender].roundPoints > playerStats[msg.sender].allTimeHighRound) {
-            playerStats[msg.sender].allTimeHighRound = playerStats[msg.sender].roundPoints;
+        if (playerStatsTemp.roundPoints > playerStatsTemp.allTimeHighRound) {
+            playerStatsTemp.allTimeHighRound = playerStatsTemp.roundPoints;
         }
+
+        playerStats[msg.sender] = playerStatsTemp; // Assign updated struct back to storage
 
         emit GotchiFed(msg.sender, tokenId, points.feeding);
     }
 
     /**
-    * @dev Allows the player to play with their MamaGotchi, increasing happiness with a cooldown period.
-    * Requires the caller to be the owner of the token and to approve the spending of $HAHA tokens.
-    * Awards `playingPoints` Gotchi Points to the player for each play interaction.
-    * Updates the player's all-time high round score if the new round score exceeds it.
+    * @dev Allows the player to play with their MamaGotchi, increasing happiness.
+    * Requires approval for spending $HAHA tokens and enforces a cooldown period.
+    * Awards Gotchi points and updates the player’s high score if the round score exceeds it.
+    * Emits GotchiPlayed event with playing points.
+    *
+    * Requirements:
+    * - Caller must be the owner of the token.
+    * - Gotchi must be alive.
+    * - Cooldown must have elapsed since the last play.
+    * - Caller must approve the transfer of `playCost` in $HAHA tokens.
     *
     * @param tokenId The ID of the MamaGotchi to play with.
     */
     function play(uint256 tokenId) external nonReentrant {
+        require(isAlive(tokenId), "MamaGotchi isn't alive!");
+        checkAndMarkDeath(tokenId);  // Check if Gotchi should be marked as dead
+
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(hahaToken.allowance(msg.sender, address(this)) >= playCost, "Approval required for playing");
         require(hahaToken.transferFrom(msg.sender, address(this), playCost), "Playing requires $HAHA tokens");
-        require(block.timestamp >= gotchi.lastPlayTime + cooldowns.play, "MamaGotchi doesn't want to play now!");
+        require(block.timestamp >= gotchi.lastPlayTime + cooldowns.play, "MamaGotchi says: I'm tired now!");
 
-        gotchiStats[tokenId].happiness = gotchiStats[tokenId].happiness + 10 > 100 ? 100 : gotchiStats[tokenId].happiness + 10;
+        // Apply happiness increase and update timestamp
+        gotchi.happiness = gotchi.happiness + 10 > 100 ? 100 : gotchi.happiness + 10;
         gotchi.lastPlayTime = block.timestamp;
 
-        playerStats[msg.sender].roundPoints += points.playing;
-        playerStats[msg.sender].cumulativePoints += points.playing;
+        // Use a local variable to manage points before re-assigning
+        PlayerStats memory playerStatsTemp = playerStats[msg.sender];
+        playerStatsTemp.roundPoints += points.playing;
+        playerStatsTemp.cumulativePoints += points.playing;
 
-        if (playerStats[msg.sender].roundPoints > playerStats[msg.sender].allTimeHighRound) {
-            playerStats[msg.sender].allTimeHighRound = playerStats[msg.sender].roundPoints;
+        if (playerStatsTemp.roundPoints > playerStatsTemp.allTimeHighRound) {
+            playerStatsTemp.allTimeHighRound = playerStatsTemp.roundPoints;
         }
+
+        playerStats[msg.sender] = playerStatsTemp; // Write updated struct back to storage
 
         emit GotchiPlayed(msg.sender, tokenId, points.playing);
     }
 
-   /**
-     * @dev Puts the MamaGotchi to sleep, pausing health and happiness decay.
-     * Can only be called by the token owner and if the MamaGotchi is not already sleeping.
-     * Enforces a cooldown period of 1 hour between sleep actions, requiring the elapsed time
-     * since the last sleep to meet the cooldown duration.
-     * Records the time when sleep started and updates the last sleep action timestamp.
-     * @param tokenId The ID of the MamaGotchi to put to sleep.
-     */
-
+    /**
+    * @dev Puts the MamaGotchi to sleep, pausing health and happiness decay.
+    * Requires the token owner to initiate and enforces a cooldown between sleep actions.
+    * Records the start time and resets the cooldown timer.
+    * Emits GotchiSleeping event with the start time.
+    *
+    * Requirements:
+    * - Caller must be the token owner.
+    * - Gotchi must not already be sleeping.
+    * - Cooldown must have elapsed since the last sleep.
+    *
+    * @param tokenId The ID of the MamaGotchi to put to sleep.
+    */
     function sleep(uint256 tokenId) external {
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-        require(!gotchiStats[tokenId].isSleeping, "MamaGotchi is already sleeping!");
+        require(!gotchiStats[tokenId].isSleeping, "MamaGotchi says: I'm already in dreamland, shhh!");
 
         // Check if the cooldown period has elapsed
         require(
             block.timestamp >= gotchiStats[tokenId].lastSleepTime + cooldowns.sleep,
-            "MamaGotchi isn't tired now!"
+            "MamaGotchi says: I'm not sleepy!"
         );
 
         // Set the sleep state and timestamp
@@ -302,50 +361,59 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Wakes the MamaGotchi from sleep, calculating and applying the decay rates for health and happiness.
-     * Sleep duration is capped at 8 hours and decay applies only after that period or when the player wakes the pet.
-     * @param tokenId The ID of the MamaGotchi to wake.
-     */
+    * @dev Wakes the MamaGotchi, applying accumulated decay to health and happiness.
+    * Caps decay at `MAX_SLEEP_DURATION` and resets the sleep state.
+    * Uses `checkAndMarkDeath` to update Gotchi's status if health or happiness falls to zero.
+    * Emits GotchiAwake and DecayCalculated events.
+    *
+    * Requirements:
+    * - Caller must be the token owner.
+    * - Gotchi must be in a sleeping state.
+    *
+    * @param tokenId The ID of the MamaGotchi to wake up.
+    */
     function wake(uint256 tokenId) external {
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-        require(gotchiStats[tokenId].isSleeping, "MamaGotchi is already wide awake!");
-        uint256 sleepDuration = block.timestamp - gotchiStats[tokenId].sleepStartTime;
-   
-         if (sleepDuration > MAX_SLEEP_DURATION) {
-            sleepDuration = MAX_SLEEP_DURATION;
-         }
+        require(gotchiStats[tokenId].isSleeping, "MamaGotchi says: I'm already awake!");
 
-        // Call decay functions, passing sleepDuration as duration
+        uint256 sleepDuration = block.timestamp - gotchiStats[tokenId].sleepStartTime;
+        if (sleepDuration > MAX_SLEEP_DURATION) {
+            sleepDuration = MAX_SLEEP_DURATION;
+        }
+
+        // Calculate and apply decay
         uint256 healthDecay = calculateHealthDecay(sleepDuration);
         uint256 happinessDecay = calculateHappinessDecay(sleepDuration);
-
-        // Emit the DecayCalculated event
-         emit DecayCalculated(healthDecay, happinessDecay);
-
-        // Apply decay values to health and happiness
         gotchiStats[tokenId].health = gotchiStats[tokenId].health > healthDecay ? 
             gotchiStats[tokenId].health - healthDecay : 0;
         gotchiStats[tokenId].happiness = gotchiStats[tokenId].happiness > happinessDecay ? 
             gotchiStats[tokenId].happiness - happinessDecay : 0;
 
-        // Reset sleep state
+        // Mark Gotchi as dead if health or happiness hit zero
+        checkAndMarkDeath(tokenId);
+
+        // Reset sleep state and emit relevant events
         gotchiStats[tokenId].isSleeping = false;
-        gotchiStats[tokenId].sleepStartTime = 0; 
- 
-        // Emit GotchiAwake event
+        gotchiStats[tokenId].sleepStartTime = 0;
+
+        emit DecayCalculated(healthDecay, happinessDecay);
         emit GotchiAwake(msg.sender, tokenId, healthDecay, happinessDecay);
     }
 
-    /** 
-    * @dev Updates a leaderboard with a player's new score if it qualifies for the top 10. 
-    * Skips updates when the player's score is zero.
-    * If the score qualifies, it is inserted into the leaderboard, sorted, and the lowest score 
-    * is removed to maintain only the top 10 entries.
-    * 
+    /**
+    * @dev Updates a leaderboard with a player's score if it qualifies for the top 10.
+    * Compares the score against the current lowest score on the leaderboard.
+    * Replaces the lowest score if the new score qualifies, then re-sorts the leaderboard.
+    * Emits LeaderboardUpdated event with the player's updated score and leaderboard type.
+    *
+    * Requirements:
+    * - `score` must be non-zero.
+    *
     * @param leaderboard The leaderboard array (either topAllTimeHighRound or topCumulativePoints).
     * @param player The address of the player whose score is being considered.
-    * @param score The player's current score, which will be compared to existing leaderboard scores.
-    **/
+    * @param score The player's score for the given leaderboard.
+    * @param leaderboardType A string identifier for the leaderboard type.
+    */
     function updateLeaderboard(
         LeaderboardEntry[10] storage leaderboard,
         address player,
@@ -366,9 +434,10 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     }
 
     /**
-    * @dev Sorts a leaderboard array in descending order by score.
-    * Uses bubble sort for simplicity, as the array length is fixed and small.
-    * 
+    * @dev Sorts a given leaderboard array in descending order by score.
+    * Implements bubble sort for simplicity, which is efficient given the fixed length of 10 entries.
+    * Swaps entries in place, ensuring the highest scores appear at the top.
+    *
     * @param leaderboard The leaderboard array to sort.
     */
     function sortLeaderboard(LeaderboardEntry[10] storage leaderboard) internal {
@@ -418,35 +487,32 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     /**
     * @dev Updates the points awarded for minting a MamaGotchi.
     * Can only be called by the contract owner.
-    * @param newMintingPoints The new number of points awarded for minting.
+    * @param newPointsMinting The new number of points awarded for minting.
     */
-    function setMintingPoints(uint256 newMintingPoints) external onlyOwner {
-        points.minting = newMintingPoints;
-        emit PointsUpdated("MintingPoints", newMintingPoints);
+    function setMintingPoints(uint256 newPointsMinting) external onlyOwner {
+        points.minting = newPointsMinting;
+        emit PointsUpdated("MintingPoints", newPointsMinting);
     }
-
 
     /**
     * @dev Updates the points awarded for feeding a MamaGotchi.
     * Can only be called by the contract owner.
-    * @param newFeedingPoints The new number of points awarded for feeding.
+    * @param newPointsFeeding The new number of points awarded for feeding.
     */
-    function setFeedingPoints(uint256 newFeedingPoints) external onlyOwner {
-        points.feeding = newFeedingPoints;
-        emit PointsUpdated("FeedingPoints", newFeedingPoints);
+    function setFeedingPoints(uint256 newPointsFeeding) external onlyOwner {
+        points.feeding = newPointsFeeding;
+        emit PointsUpdated("FeedingPoints", newPointsFeeding);
     }
-
 
     /**
     * @dev Updates the points awarded for playing with a MamaGotchi.
     * Can only be called by the contract owner.
-    * @param newPlayingPoints The new number of points awarded for playing.
+    * @param newPointsPlaying The new number of points awarded for playing.
     */
-    function setPlayingPoints(uint256 newPlayingPoints) external onlyOwner {
-        points.playing = newPlayingPoints;
-        emit PointsUpdated("PlayingPoints", newPlayingPoints);
+    function setPlayingPoints(uint256 newPointsPlaying) external onlyOwner {
+        points.playing = newPointsPlaying;
+        emit PointsUpdated("PlayingPoints", newPointsPlaying);
     }
-
 
     /**
      * @dev Calculates the health decay based on the time elapsed since last sleep.
@@ -490,31 +556,10 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     // Helper function for testing purposes only. Remove before deployment.
 
 
-//#########################################################################
-//################## TESTING FUNCTIONS ####################################
-//#########################################################################
+//#################################################################
+//################## TESTING FUNCTIONS ############################
+//#################################################################
 
-    //Test helper function to set health and happiness to zero for a specific Gotchi
-    function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint256 happiness) external onlyOwner {
-        gotchiStats[tokenId].health = health;
-        gotchiStats[tokenId].happiness = happiness;
-    }
-    
-    // Testing helper function to set round and cumulative points for a specific player
-    function setPointsForTesting(address player, uint256 round, uint256 cumulative) external onlyOwner {
-        playerStats[player].roundPoints = round;
-        playerStats[player].cumulativePoints = cumulative;
-    }
+   
 
-
-    // TESTING ONLY: Helper function to test leaderboard updates with a specific score and leaderboard type
-    function testUpdateLeaderboard(address player, uint256 score, string memory leaderboardType) external onlyOwner {
-        if (keccak256(bytes(leaderboardType)) == keccak256(bytes("AllTimeHighRound"))) {
-            updateLeaderboard(topAllTimeHighRound, player, score, leaderboardType);
-        } else if (keccak256(bytes(leaderboardType)) == keccak256(bytes("CumulativePoints"))) {
-            updateLeaderboard(topCumulativePoints, player, score, leaderboardType);
-        } else {
-            revert("Invalid leaderboard type");
-        }
-    }
 }
