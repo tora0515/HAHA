@@ -26,30 +26,49 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     uint256 public feedingPoints = 10; // Points awarded for feeding a MamaGotchi
     uint256 public playingPoints = 10; // Points awarded for playing with a MamaGotchi
     uint256 public deathPenaltyPoints = 30; // Points deducted from cumulative score on death
-
+      
     IERC20 public hahaToken; // Reference to the $HAHA token contract
 
-    // Represents a single MamaGotchi's core attributes and state.
-    // Tracks health, happiness, sleep state, and activity timestamps.
-    struct Gotchi {
-    uint256 health;
-    uint256 happiness;
-    uint256 deathTimestamp;
-    bool isSleeping;
-    uint256 sleepStartTime;
-    uint256 lastFeedTime;
-    uint256 lastPlayTime;
-    uint256 lastSleepTime;
-    }
-    
-    mapping(uint256 => Gotchi) public gotchiStats; // Mapping from tokenId to Gotchi stats
+    LeaderboardEntry[10] public topAllTimeHighRound; // Top 10 for all-time high round scores
+    LeaderboardEntry[10] public topCumulativePoints; // Top 10 for cumulative scores
 
+    mapping(uint256 => Gotchi) public gotchiStats; // Mapping from tokenId to Gotchi stats
     // Points tracking variables
     mapping(address => uint256) public roundPoints; // Points accumulated in the current round
     mapping(address => uint256) public cumulativePoints; // Total points accumulated across all rounds
     mapping(address => uint256) public allTimeHighRound; // Highest score in a single round
+  
+    // Represents a single MamaGotchi's core attributes and state.
+    // Tracks health, happiness, sleep state, and activity timestamps.
+    struct Gotchi {
+        uint256 health;
+        uint256 happiness;
+        uint256 deathTimestamp;
+        bool isSleeping;
+        uint256 sleepStartTime;
+        uint256 lastFeedTime;
+        uint256 lastPlayTime;
+        uint256 lastSleepTime;
+    }
 
-    
+     // Leaderboard Struct and Arrays
+    struct LeaderboardEntry {
+        address player;
+        uint256 score;
+    }
+
+    // Event definitions (place them here)
+    event GotchiMinted(address indexed player, uint256 tokenId, uint256 mintingPoints);
+    event GotchiFed(address indexed player, uint256 tokenId, uint256 feedingPoints);
+    event GotchiPlayed(address indexed player, uint256 tokenId, uint256 playingPoints);
+    event GotchiSleeping(address indexed player, uint256 tokenId, uint256 sleepStartTime);
+    event GotchiAwake(address indexed player, uint256 tokenId, uint256 healthDecay, uint256 happinessDecay);
+    event GotchiDied(address indexed player, uint256 tokenId, uint256 deathPenaltyPoints);
+    event LeaderboardUpdated(address indexed player, uint256 newScore, string leaderboardType);
+    event CostUpdated(string costType, uint256 newValue);
+    event PointsUpdated(string pointsType, uint256 newValue);
+    event DecayCalculated(uint256 healthDecay, uint256 happinessDecay);
+
     constructor(address initialOwner, address hahaTokenAddress) 
         ERC721("MamaGotchiMinato", "MGM") 
         Ownable(initialOwner) 
@@ -130,12 +149,12 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
         if (roundPoints[to] > allTimeHighRound[to]) {
             allTimeHighRound[to] = roundPoints[to];
         }
+
+        // Emit GotchiMinted event
+         emit GotchiMinted(to, newTokenId, mintingPoints);
     }
 
-    
-
-    /**
-     * @dev Checks if a MamaGotchi is currently alive, based on health and happiness levels.
+    /** @dev Checks if a MamaGotchi is currently alive, based on health and happiness levels.
      * @param tokenId The ID of the MamaGotchi to check.
      * @return True if the MamaGotchi is alive (health and happiness > 0), otherwise false.
      */
@@ -170,9 +189,12 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
             : 0; // Ensure cumulative points don’t go negative
         roundPoints[player] = 0; // Reset round points
 
+          // Emit GotchiDied event
+        emit GotchiDied(player, tokenId, deathPenaltyPoints);
+
          // Update leaderboards with all-time high round score and cumulative points
-        updateLeaderboard(topAllTimeHighRound, player, allTimeHighRound[player]);
-        updateLeaderboard(topCumulativePoints, player, cumulativePoints[player]);
+        updateLeaderboard(topAllTimeHighRound, player, allTimeHighRound[player], "AllTimeHighRound");
+        updateLeaderboard(topCumulativePoints, player, cumulativePoints[player], "CumulativePoints");
     }
 
     /**
@@ -198,7 +220,9 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
         if (roundPoints[msg.sender] > allTimeHighRound[msg.sender]) {
             allTimeHighRound[msg.sender] = roundPoints[msg.sender];
         }
-
+        
+        // Emit GotchiFed event
+        emit GotchiFed(msg.sender, tokenId, feedingPoints);
     }
 
     /**
@@ -227,6 +251,9 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
         if (roundPoints[msg.sender] > allTimeHighRound[msg.sender]) {
             allTimeHighRound[msg.sender] = roundPoints[msg.sender];
         }
+
+        // Emit GotchiPlayed event
+        emit GotchiPlayed(msg.sender, tokenId, playingPoints);
     }
 
    /**
@@ -252,6 +279,9 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
         gotchiStats[tokenId].isSleeping = true;
         gotchiStats[tokenId].sleepStartTime = block.timestamp;
         gotchiStats[tokenId].lastSleepTime = block.timestamp; // Update the lastSleepTime with the current time
+
+        // Emit GotchiSleeping event
+        emit GotchiSleeping(msg.sender, tokenId, block.timestamp);
     }
 
     /**
@@ -263,15 +293,17 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(gotchiStats[tokenId].isSleeping, "MamaGotchi is already wide awake!");
         uint256 sleepDuration = block.timestamp - gotchiStats[tokenId].sleepStartTime;
-
-
-        if (sleepDuration > MAX_SLEEP_DURATION) {
+   
+         if (sleepDuration > MAX_SLEEP_DURATION) {
             sleepDuration = MAX_SLEEP_DURATION;
-        }
+         }
 
         // Call decay functions, passing sleepDuration as duration
         uint256 healthDecay = calculateHealthDecay(sleepDuration);
         uint256 happinessDecay = calculateHappinessDecay(sleepDuration);
+
+        // Emit the DecayCalculated event
+         emit DecayCalculated(healthDecay, happinessDecay);
 
         // Apply decay values to health and happiness
         gotchiStats[tokenId].health = gotchiStats[tokenId].health > healthDecay ? 
@@ -281,20 +313,13 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
 
         // Reset sleep state
         gotchiStats[tokenId].isSleeping = false;
-        gotchiStats[tokenId].sleepStartTime = 0;
+        gotchiStats[tokenId].sleepStartTime = 0; 
+ 
+        // Emit GotchiAwake event
+        emit GotchiAwake(msg.sender, tokenId, healthDecay, happinessDecay);
     }
 
-    // Leaderboard Struct and Arrays
-    struct LeaderboardEntry {
-        address player;
-        uint256 score;
-    }
-
-    LeaderboardEntry[10] public topAllTimeHighRound; // Top 10 for all-time high round scores
-    LeaderboardEntry[10] public topCumulativePoints; // Top 10 for cumulative scores
-
-    /**
-    * @dev Updates a leaderboard with a player's new score if it qualifies for the top 10. 
+    /** @dev Updates a leaderboard with a player's new score if it qualifies for the top 10. 
     * Skips updates when the player's score is zero.
     * If the score qualifies, it is inserted into the leaderboard, sorted, and the lowest score 
     * is removed to maintain only the top 10 entries.
@@ -302,22 +327,27 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     * @param leaderboard The leaderboard array (either topAllTimeHighRound or topCumulativePoints).
     * @param player The address of the player whose score is being considered.
     * @param score The player's current score, which will be compared to existing leaderboard scores.
-    */
+    **/
+    function updateLeaderboard(
+        LeaderboardEntry[10] storage leaderboard,
+        address player,
+        uint256 score,
+        string memory leaderboardType // Pass the type directly as a parameter
+    ) internal {
+        // Skip leaderboard update if score is zero
+        if (score == 0) return;
 
-    function updateLeaderboard(LeaderboardEntry[10] storage leaderboard, address player, uint256 score) internal {
-    // Skip leaderboard update if score is zero
-    if (score == 0) return;
+        // Check if the new score qualifies for the leaderboard
+        if (score > leaderboard[9].score) { // Compare with the lowest score in the leaderboard
+            leaderboard[9] = LeaderboardEntry(player, score); // Replace the lowest entry
+            sortLeaderboard(leaderboard); // Sort leaderboard by score in descending order
 
-    // Check if the new score qualifies for the leaderboard
-    if (score > leaderboard[9].score) { // Compare with the lowest score in the leaderboard
-        leaderboard[9] = LeaderboardEntry(player, score); // Replace the lowest entry
-        sortLeaderboard(leaderboard); // Sort leaderboard by score in descending order
+            // Emit the LeaderboardUpdated event with leaderboard type
+            emit LeaderboardUpdated(player, score, leaderboardType);
+        }
     }
-}
 
-
-    /**
-    * @dev Sorts a leaderboard array in descending order by score.
+    /** @dev Sorts a leaderboard array in descending order by score.
     * Uses bubble sort for simplicity, as the array length is fixed and small.
     * 
     * @param leaderboard The leaderboard array to sort.
@@ -344,16 +374,16 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
      */
     function setMintCost(uint256 newMintCost) external onlyOwner {
         mintCost = newMintCost;
+        emit CostUpdated("MintCost", newMintCost);
     }
 
-    
-    /**
-     * @dev Updates the feeding cost in $HAHA tokens required to feed a MamaGotchi.
+     /** @dev Updates the feeding cost in $HAHA tokens required to feed a MamaGotchi.
      * Can only be called by the contract owner.
      * @param newFeedCost The new feed cost in $HAHA tokens.
      */
     function setFeedCost(uint256 newFeedCost) external onlyOwner {
         feedCost = newFeedCost;
+        emit CostUpdated("FeedCost", newFeedCost);
     }
 
     /**
@@ -363,6 +393,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
      */
     function setPlayCost(uint256 newPlayCost) external onlyOwner {
         playCost = newPlayCost;
+        emit CostUpdated("PlayCost", newPlayCost);
     }
 
     /**
@@ -372,6 +403,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     */
     function setMintingPoints(uint256 newMintingPoints) external onlyOwner {
         mintingPoints = newMintingPoints;
+        emit PointsUpdated("MintingPoints", newMintingPoints);
     }
 
     /**
@@ -381,6 +413,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     */
     function setFeedingPoints(uint256 newFeedingPoints) external onlyOwner {
         feedingPoints = newFeedingPoints;
+        emit PointsUpdated("FeedingPoints", newFeedingPoints);
     }
 
     /**
@@ -390,6 +423,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     */
     function setPlayingPoints(uint256 newPlayingPoints) external onlyOwner {
         playingPoints = newPlayingPoints;
+        emit PointsUpdated("PlayingPoints", newPlayingPoints);
     }
 
     /**
@@ -433,10 +467,19 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     cumulativePoints[player] = cumulative;
     }
 
-    // TESTING ONLY: Helper function to test leaderboard updates with a specific score
-    function testUpdateLeaderboard(address player, uint256 score) external onlyOwner {
-        updateLeaderboard(topAllTimeHighRound, player, score);
+    // TESTING ONLY: Helper function to test leaderboard updates with a specific score and leaderboard type
+function testUpdateLeaderboard(address player, uint256 score, string memory leaderboardType) external onlyOwner {
+    if (keccak256(bytes(leaderboardType)) == keccak256(bytes("AllTimeHighRound"))) {
+        updateLeaderboard(topAllTimeHighRound, player, score, leaderboardType);
+    } else if (keccak256(bytes(leaderboardType)) == keccak256(bytes("CumulativePoints"))) {
+        updateLeaderboard(topCumulativePoints, player, score, leaderboardType);
+    } else {
+        revert("Invalid leaderboard type");
     }
+}
+
+
+
 
 
 }

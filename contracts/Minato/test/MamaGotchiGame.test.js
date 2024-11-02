@@ -220,8 +220,10 @@ describe("MamaGotchiGame Contract - Gotchi Points System", function () {
     // Fetch the initial leaderboard entry
     const initialLeaderboardEntry = await game.topAllTimeHighRound(0);
 
-    // Call the test helper with a score of zero
-    await game.connect(owner).testUpdateLeaderboard(addr1.address, 0);
+    // Call the test helper with a score of zero and specify the leaderboard type
+    await game
+      .connect(owner)
+      .testUpdateLeaderboard(addr1.address, 0, "AllTimeHighRound");
 
     // Fetch the leaderboard entry again to check if it has remained unchanged
     const updatedLeaderboardEntry = await game.topAllTimeHighRound(0);
@@ -233,5 +235,230 @@ describe("MamaGotchiGame Contract - Gotchi Points System", function () {
     expect(updatedLeaderboardEntry.player).to.equal(
       initialLeaderboardEntry.player
     ); // Should remain unchanged
+  });
+
+  it("Should emit GotchiMinted event on minting a new MamaGotchi", async function () {
+    const mintCost = await game.mintCost();
+
+    // Approve HAHA token spending for minting
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+
+    // Listen for the GotchiMinted event
+    await expect(game.connect(addr1).mintNewGotchi(addr1.address, 0))
+      .to.emit(game, "GotchiMinted")
+      .withArgs(addr1.address, 0, await game.mintingPoints()); // Replace `0` with the actual tokenId if needed
+  });
+
+  it("Should emit GotchiFed event on feeding a MamaGotchi", async function () {
+    const mintCost = await game.mintCost();
+    const feedCost = await game.feedCost();
+
+    // Mint a new MamaGotchi first
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+
+    // Approve HAHA token spending for feeding
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+
+    // Listen for the GotchiFed event
+    await expect(game.connect(addr1).feed(0))
+      .to.emit(game, "GotchiFed")
+      .withArgs(addr1.address, 0, await game.feedingPoints());
+  });
+
+  it("Should emit GotchiPlayed event on playing with a MamaGotchi", async function () {
+    const mintCost = await game.mintCost();
+    const playCost = await game.playCost();
+
+    // Mint a new MamaGotchi first
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+
+    // Approve HAHA token spending for playing
+    await hahaToken.connect(addr1).approve(game.target, playCost);
+
+    // Listen for the GotchiPlayed event
+    await expect(game.connect(addr1).play(0))
+      .to.emit(game, "GotchiPlayed")
+      .withArgs(addr1.address, 0, await game.playingPoints());
+  });
+
+  it("Should emit GotchiSleeping event on putting a MamaGotchi to sleep", async function () {
+    const mintCost = await game.mintCost();
+
+    // Mint a new MamaGotchi first
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+
+    // Put MamaGotchi to sleep and capture the timestamp
+    const sleepTx = await game.connect(addr1).sleep(0);
+    const block = await ethers.provider.getBlock(sleepTx.blockNumber);
+    const sleepTimestamp = BigInt(block.timestamp);
+
+    // Listen for the GotchiSleeping event
+    await expect(sleepTx)
+      .to.emit(game, "GotchiSleeping")
+      .withArgs(addr1.address, 0, sleepTimestamp);
+  });
+
+  it("Should emit GotchiAwake event on waking a MamaGotchi", async function () {
+    const mintCost = await game.mintCost();
+
+    // Mint and put MamaGotchi to sleep first
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+    await game.connect(addr1).sleep(0);
+
+    // Simulate time passing to create decay
+    await ethers.provider.send("evm_increaseTime", [3600]); // Increase by 1 hour
+    await ethers.provider.send("evm_mine");
+
+    // Calculate expected decay using explicit BigInt conversions
+    const healthDecayRate = await game.HEALTH_DECAY_RATE();
+    const happinessDecayRate = await game.HAPPINESS_DECAY_RATE();
+    const decayDuration = BigInt(3600); // Simulate 1-hour decay duration
+
+    const healthDecay =
+      (decayDuration * healthDecayRate) / (BigInt(3600) * BigInt(100));
+    const happinessDecay =
+      (decayDuration * happinessDecayRate) / (BigInt(3600) * BigInt(100));
+
+    // Wake the MamaGotchi and check for event
+    await expect(game.connect(addr1).wake(0))
+      .to.emit(game, "GotchiAwake")
+      .withArgs(addr1.address, 0, healthDecay, happinessDecay);
+  });
+
+  it("Should emit LeaderboardUpdated event for AllTimeHighRound when leaderboard is updated", async function () {
+    const mintCost = await game.mintCost();
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+
+    // Mint a MamaGotchi and set up a score for AllTimeHighRound leaderboard
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+    await game.setHealthAndHappinessForTesting(0, 0, 0); // "Kill" the MamaGotchi
+
+    // Set points so that AllTimeHighRound leaderboard is updated
+    await game.setPointsForTesting(addr1.address, 100, 100);
+
+    // Trigger leaderboard update for AllTimeHighRound
+    await expect(game.setDeath(0))
+      .to.emit(game, "LeaderboardUpdated")
+      .withArgs(addr1.address, 100, "AllTimeHighRound");
+  });
+
+  it("Should emit LeaderboardUpdated event for CumulativePoints when leaderboard is updated", async function () {
+    // Ensure CumulativePoints leaderboard is updated and emits the correct event
+    await expect(
+      game.testUpdateLeaderboard(addr1.address, 100, "CumulativePoints")
+    )
+      .to.emit(game, "LeaderboardUpdated")
+      .withArgs(addr1.address, 100, "CumulativePoints");
+  });
+
+  it("Should emit GotchiDied event on MamaGotchi's death", async function () {
+    const mintCost = await game.mintCost();
+
+    // Mint and set health/happiness to zero to simulate death
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+    await game.connect(owner).setHealthAndHappinessForTesting(0, 0, 0);
+
+    // Set death and check for GotchiDied event
+    await expect(game.setDeath(0))
+      .to.emit(game, "GotchiDied")
+      .withArgs(addr1.address, 0, await game.deathPenaltyPoints());
+  });
+
+  it("Should emit LeaderboardUpdated event when player scores qualify for leaderboard", async function () {
+    const mintCost = await game.mintCost();
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+
+    // Set points to qualify for leaderboard update
+    await game.connect(owner).setPointsForTesting(addr1.address, 150, 150);
+
+    // Set health and happiness to zero to allow for MamaGotchi "death"
+    await game.setHealthAndHappinessForTesting(0, 0, 0);
+
+    // Trigger leaderboard update by simulating death
+    await expect(game.setDeath(0))
+      .to.emit(game, "LeaderboardUpdated")
+      .withArgs(addr1.address, 150, "AllTimeHighRound");
+
+    // Similarly, update cumulative points leaderboard
+    await expect(
+      game.testUpdateLeaderboard(addr1.address, 150, "CumulativePoints")
+    )
+      .to.emit(game, "LeaderboardUpdated")
+      .withArgs(addr1.address, 150, "CumulativePoints");
+  });
+
+  describe("CostUpdated Event Emission", function () {
+    it("Should emit CostUpdated event on mint cost update", async function () {
+      const newMintCost = ethers.parseEther("100"); // New mint cost
+      await expect(game.setMintCost(newMintCost))
+        .to.emit(game, "CostUpdated")
+        .withArgs("MintCost", newMintCost);
+    });
+
+    it("Should emit CostUpdated event on feed cost update", async function () {
+      const newFeedCost = ethers.parseEther("50"); // New feed cost
+      await expect(game.setFeedCost(newFeedCost))
+        .to.emit(game, "CostUpdated")
+        .withArgs("FeedCost", newFeedCost);
+    });
+
+    it("Should emit CostUpdated event on play cost update", async function () {
+      const newPlayCost = ethers.parseEther("30"); // New play cost
+      await expect(game.setPlayCost(newPlayCost))
+        .to.emit(game, "CostUpdated")
+        .withArgs("PlayCost", newPlayCost);
+    });
+  });
+
+  it("Should emit PointsUpdated event on minting points update", async function () {
+    await expect(game.setMintingPoints(25))
+      .to.emit(game, "PointsUpdated")
+      .withArgs("MintingPoints", 25);
+  });
+
+  it("Should emit PointsUpdated event on feeding points update", async function () {
+    await expect(game.setFeedingPoints(15))
+      .to.emit(game, "PointsUpdated")
+      .withArgs("FeedingPoints", 15);
+  });
+
+  it("Should emit PointsUpdated event on playing points update", async function () {
+    await expect(game.setPlayingPoints(20))
+      .to.emit(game, "PointsUpdated")
+      .withArgs("PlayingPoints", 20);
+  });
+
+  it("Should emit DecayCalculated event on waking a MamaGotchi", async function () {
+    const mintCost = await game.mintCost();
+
+    // Mint and put MamaGotchi to sleep first
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+    await game.connect(addr1).sleep(0);
+
+    // Simulate time passing to create decay
+    await ethers.provider.send("evm_increaseTime", [3600]); // Increase by 1 hour
+    await ethers.provider.send("evm_mine");
+
+    // Calculate expected decay
+    const healthDecayRate = await game.HEALTH_DECAY_RATE();
+    const happinessDecayRate = await game.HAPPINESS_DECAY_RATE();
+    const decayDuration = BigInt(3600);
+
+    const healthDecay =
+      (decayDuration * healthDecayRate) / (BigInt(3600) * BigInt(100));
+    const happinessDecay =
+      (decayDuration * happinessDecayRate) / (BigInt(3600) * BigInt(100));
+
+    // Check for the DecayCalculated event emission
+    await expect(game.connect(addr1).wake(0))
+      .to.emit(game, "DecayCalculated")
+      .withArgs(healthDecay, happinessDecay);
   });
 });
