@@ -554,23 +554,4 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     function getTopCumulativePointsLeaderboard() external view returns (LeaderboardEntry[10] memory) {
         return topCumulativePoints;
     }
-
-
-
-
-
-
-
-
-    // Test-only function to update the leaderboard for testing purposes
-function testUpdateLeaderboard(address player, uint256 score, string memory leaderboardType) public onlyOwner {
-    if (keccak256(bytes(leaderboardType)) == keccak256(bytes("AllTimeHighRound"))) {
-        updateLeaderboard(topAllTimeHighRound, player, score, "AllTimeHighRound");
-    } else if (keccak256(bytes(leaderboardType)) == keccak256(bytes("CumulativePoints"))) {
-        updateLeaderboard(topCumulativePoints, player, score, "CumulativePoints");
-    } else {
-        revert("Invalid leaderboard type");
-    }
-}
-
 }
