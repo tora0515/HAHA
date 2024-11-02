@@ -5,8 +5,10 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
+
+contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     uint256 private _nextTokenId;
     uint256 public constant FEED_COOLDOWN = 10 * 60; // 10-minute cooldown for feeding
     uint256 public constant PLAY_COOLDOWN = 15 * 60; // 15-minute cooldown for playing
@@ -126,7 +128,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     * @param to The address to receive the newly minted MamaGotchi.
     * @param tokenIdToBurn The ID of the MamaGotchi to be burned (set to 0 if not applicable).
     */
-    function mintNewGotchi(address to, uint256 tokenIdToBurn) external {
+    function mintNewGotchi(address to, uint256 tokenIdToBurn) external nonReentrant {
         if (tokenIdToBurn != 0) {
             require(ownerOf(tokenIdToBurn) == msg.sender, "Not your MamaGotchi");
             Gotchi storage gotchi = gotchiStats[tokenIdToBurn];
@@ -171,7 +173,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     * 
     * @param tokenId The ID of the MamaGotchi to set as dead.
     */
-    function setDeath(uint256 tokenId) external onlyOwner {
+    function setDeath(uint256 tokenId) external onlyOwner nonReentrant {
         require(ownerOf(tokenId) != address(0), "Token does not exist");
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(gotchi.health == 0 || gotchi.happiness == 0, "MamaGotchi isn't dead! Be a Good Kid and treat her well!");
@@ -202,7 +204,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
      * Requires the caller to be the owner of the token and to approve the spending of $HAHA tokens.
      * @param tokenId The ID of the MamaGotchi to feed.
      */
-    function feed(uint256 tokenId) external {
+    function feed(uint256 tokenId) external nonReentrant {
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(hahaToken.allowance(msg.sender, address(this)) >= feedCost, "Approval required for feeding");
@@ -233,7 +235,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable {
     *
     * @param tokenId The ID of the MamaGotchi to play with.
     */
-    function play(uint256 tokenId) external {
+    function play(uint256 tokenId) external nonReentrant {
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(hahaToken.allowance(msg.sender, address(this)) >= playCost, "Approval required for playing");

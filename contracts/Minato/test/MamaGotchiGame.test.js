@@ -6,7 +6,7 @@ describe("MamaGotchiGame Contract - Gotchi Points System", function () {
 
   beforeEach(async function () {
     // Step 1: Deploy HAHA token contract for testing payments in the game
-    const HAHA = await ethers.getContractFactory("HAHAMinatoTestnetToken"); // Adjusted contract name
+    const HAHA = await ethers.getContractFactory("HAHAMinatoTestnetToken");
     hahaToken = await HAHA.deploy();
     await hahaToken.waitForDeployment(); // Adjusted for version compatibility
 
@@ -460,5 +460,40 @@ describe("MamaGotchiGame Contract - Gotchi Points System", function () {
     await expect(game.connect(addr1).wake(0))
       .to.emit(game, "DecayCalculated")
       .withArgs(healthDecay, happinessDecay);
+  });
+
+  describe("Reentrancy Protection", function () {
+    let mintCost, feedCost, playCost;
+
+    beforeEach(async function () {
+      // Set up costs
+      mintCost = await game.mintCost();
+      feedCost = await game.feedCost();
+      playCost = await game.playCost();
+
+      // Approve HAHAMinatoTestToken and mint a new MamaGotchi
+      await hahaToken.connect(addr1).approve(game.target, mintCost);
+      await game.connect(addr1).mintNewGotchi(addr1.address, 0);
+    });
+
+    it("Should allow direct call to feed function", async function () {
+      // Approve spending for feeding
+      await hahaToken.connect(addr1).approve(game.target, feedCost);
+
+      // Attempt to feed MamaGotchi without reentrancy, expecting success
+      await expect(game.connect(addr1).feed(0))
+        .to.emit(game, "GotchiFed")
+        .withArgs(addr1.address, 0, await game.feedingPoints());
+    });
+
+    it("Should allow direct call to play function", async function () {
+      // Approve spending for playing
+      await hahaToken.connect(addr1).approve(game.target, playCost);
+
+      // Attempt to play with MamaGotchi without reentrancy, expecting success
+      await expect(game.connect(addr1).play(0))
+        .to.emit(game, "GotchiPlayed")
+        .withArgs(addr1.address, 0, await game.playingPoints());
+    });
   });
 });
