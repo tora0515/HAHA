@@ -341,7 +341,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     *
     * @param tokenId The ID of the MamaGotchi to put to sleep.
     */
-    function sleep(uint256 tokenId) external {
+    function sleep(uint256 tokenId) external nonReentrant {
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(!gotchiStats[tokenId].isSleeping, "MamaGotchi says: I'm already in dreamland, shhh!");
 
@@ -372,7 +372,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     *
     * @param tokenId The ID of the MamaGotchi to wake up.
     */
-    function wake(uint256 tokenId) external {
+    function wake(uint256 tokenId) external nonReentrant {
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(gotchiStats[tokenId].isSleeping, "MamaGotchi says: I'm already awake!");
 
@@ -418,20 +418,24 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         LeaderboardEntry[10] storage leaderboard,
         address player,
         uint256 score,
-        string memory leaderboardType // Pass the type directly as a parameter
+        string memory leaderboardType
     ) internal {
-        // Skip leaderboard update if score is zero
-        if (score == 0) return;
-
-        // Check if the new score qualifies for the leaderboard
-        if (score > leaderboard[9].score) { // Compare with the lowest score in the leaderboard
-            leaderboard[9] = LeaderboardEntry(player, score); // Replace the lowest entry
-            sortLeaderboard(leaderboard); // Sort leaderboard by score in descending order
-
-            // Emit the LeaderboardUpdated event with leaderboard type
-            emit LeaderboardUpdated(player, score, leaderboardType);
+        // Ensure that only scores greater than the lowest score (leaderboard[9]) are added
+        if (score <= leaderboard[9].score) {
+            return;
         }
+
+        // Insert the new score in place of the lowest one
+        leaderboard[9] = LeaderboardEntry(player, score);
+
+        // Sort leaderboard to maintain descending order by score
+        sortLeaderboard(leaderboard);
+
+        // Emit the LeaderboardUpdated event with leaderboard type
+        emit LeaderboardUpdated(player, score, leaderboardType);
     }
+
+
 
     /**
     * @dev Sorts a given leaderboard array in descending order by score.
@@ -442,17 +446,16 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     */
     function sortLeaderboard(LeaderboardEntry[10] storage leaderboard) internal {
         for (uint256 i = 0; i < leaderboard.length - 1; i++) {
-            for (uint256 j = i + 1; j < leaderboard.length; j++) {
-                if (leaderboard[j].score > leaderboard[i].score) {
-                    // Use temporary storage pointers to swap entries safely
-                    LeaderboardEntry storage entryI = leaderboard[i];
-                    LeaderboardEntry storage entryJ = leaderboard[j];
-
-                    (entryI.player, entryJ.player) = (entryJ.player, entryI.player);
-                    (entryI.score, entryJ.score) = (entryJ.score, entryI.score);
+            for (uint256 j = 0; j < leaderboard.length - 1 - i; j++) {
+                // Compare scores for descending order
+                if (leaderboard[j].score < leaderboard[j + 1].score) {
+                    // Swap using intermediate memory variables to avoid direct storage-to-storage assignment
+                    LeaderboardEntry memory tempEntry = leaderboard[j];
+                    leaderboard[j] = leaderboard[j + 1];
+                    leaderboard[j + 1] = tempEntry;
                 }
             }
-        }            
+        }
     }
 
     /**
@@ -553,13 +556,21 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     }
 
 
-    // Helper function for testing purposes only. Remove before deployment.
 
 
-//#################################################################
-//################## TESTING FUNCTIONS ############################
-//#################################################################
 
-   
+
+
+
+    // Test-only function to update the leaderboard for testing purposes
+function testUpdateLeaderboard(address player, uint256 score, string memory leaderboardType) public onlyOwner {
+    if (keccak256(bytes(leaderboardType)) == keccak256(bytes("AllTimeHighRound"))) {
+        updateLeaderboard(topAllTimeHighRound, player, score, "AllTimeHighRound");
+    } else if (keccak256(bytes(leaderboardType)) == keccak256(bytes("CumulativePoints"))) {
+        updateLeaderboard(topCumulativePoints, player, score, "CumulativePoints");
+    } else {
+        revert("Invalid leaderboard type");
+    }
+}
 
 }
