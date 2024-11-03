@@ -276,290 +276,88 @@ describe("MamaGotchiGame Contract - Time and Cooldown Functionality", function (
     await expect(game.connect(addr1).wake(tokenId)).to.not.be.reverted;
   });
 
-  it("Should add score to leaderboard upon Gotchi's death if saveOnDeath is true", async function () {
+  it("Should update high score on death if saveOnDeath is true and score is higher", async function () {
     const tokenId = 0;
-
-    // Deplete health to trigger death
-    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 0, 100);
-    await game.setDeath(tokenId, true);
-
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(leaderboard[0].player).to.equal(addr1.address); // Expect player to be on the leaderboard
-    expect(leaderboard[0].score).to.be.gt(0); // Expect a non-zero score for timeAlive
-  });
-
-  it("Should not add score to leaderboard upon Gotchi's death if saveOnDeath is false", async function () {
-    const tokenId = 0;
-
-    // Deplete health to trigger death
-    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 0, 100);
-    await game.setDeath(tokenId, false);
-
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(leaderboard[0].player).to.not.equal(addr1.address); // Ensure player did not get added
-  });
-
-  it("Should update leaderboard correctly if score qualifies", async function () {
-    const tokenId = 0;
-
-    // Mint and feed to accumulate timeAlive
     await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [1200]); // Fast forward 20 minutes
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(leaderboard[0].player).to.equal(addr1.address); // Expect player on leaderboard
-    expect(leaderboard[0].score).to.be.gt(0); // Expect a positive score
-  });
-
-  it("Should correctly insert new high score in sorted position on leaderboard", async function () {
-    const tokenId = 0;
-
-    // Mint, feed, and save to leaderboard with some timeAlive
-    await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [600]); // Fast forward 10 minutes
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    const firstScore = leaderboard[0].score;
-
-    // Fast forward more time to increase score and manually save again
-    await ethers.provider.send("evm_increaseTime", [1800]); // Fast forward 30 more minutes
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    const updatedLeaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(updatedLeaderboard[0].score).to.be.gt(firstScore); // Check score was updated
-  });
-
-  it("Should prevent lower scores from displacing higher scores on leaderboard", async function () {
-    const tokenId = 0;
-
-    // Mint, feed, and save initial high score
-    await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [3000]); // Fast forward for significant timeAlive
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    const initialLeaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    const topScore = initialLeaderboard[0].score;
-
-    // Manually save a lower score after minimal interaction
-    await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [300]); // Fast forward minimal time
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    const finalLeaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(finalLeaderboard[0].score).to.equal(topScore); // Ensure original high score remains
-  });
-
-  it("Should allow manual save to leaderboard when MamaGotchi is alive", async function () {
-    const tokenId = 0;
-
-    // Perform a few interactions to accumulate timeAlive
-    await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [600]); // Fast forward 10 minutes
+    await ethers.provider.send("evm_increaseTime", [600]);
     await game.connect(addr1).play(tokenId);
+    await ethers.provider.send("evm_increaseTime", [1200]);
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 0, 0); // Set Gotchi to die
 
-    // Perform manual save
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    const initialScore = await game.playerHighScores(addr1.address);
+    await game.connect(owner).setDeath(tokenId, true);
+    const updatedScore = await game.playerHighScores(addr1.address);
 
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(leaderboard[0].player).to.equal(addr1.address); // Player should be on the leaderboard
-    expect(leaderboard[0].score).to.be.gt(0); // Score should reflect timeAlive
+    expect(updatedScore).to.be.gt(initialScore);
   });
 
-  it("Should not allow duplicate entries for the same player on the leaderboard", async function () {
+  it("Should update high score on manual save if score is higher", async function () {
     const tokenId = 0;
-
-    // Perform interactions and save to leaderboard
     await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [900]); // Fast forward 15 minutes
+    await ethers.provider.send("evm_increaseTime", [600]);
     await game.connect(addr1).manualSaveToLeaderboard(tokenId);
 
-    // Verify initial leaderboard entry
-    const initialLeaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    const initialScore = initialLeaderboard[0].score;
+    const initialScore = await game.playerHighScores(addr1.address);
 
-    // Attempt another manual save with minimal additional timeAlive
-    await ethers.provider.send("evm_increaseTime", [300]); // Fast forward minimal time
+    // Increase timeAlive significantly, then save again
+    await ethers.provider.send("evm_increaseTime", [1800]);
     await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    const updatedScore = await game.playerHighScores(addr1.address);
 
-    // Verify leaderboard didn't duplicate entry, only updated score if it's higher
-    const updatedLeaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(updatedLeaderboard[0].player).to.equal(addr1.address);
-    expect(updatedLeaderboard[0].score).to.be.equal(initialScore); // Score remains unchanged for insufficient update
+    expect(updatedScore).to.be.gt(initialScore);
   });
 
-  it("Should correctly update leaderboard with multiple players and scores", async function () {
-    // Deploy and mint another Gotchi to addr2
-    const [_, addr2] = await ethers.getSigners();
-    const tokenId1 = 0;
-    await hahaToken.transfer(
-      addr2.address,
-      ethers.parseUnits("1000000000", 18)
-    );
-    await hahaToken
-      .connect(addr2)
-      .approve(game.target, ethers.parseUnits("1000000000", 18));
-    await game.connect(addr2).mintNewGotchi(addr2.address, 0);
-    const tokenId2 = 1;
-
-    // Perform actions and save for addr1
-    await game.connect(addr1).feed(tokenId1);
-    await ethers.provider.send("evm_increaseTime", [1200]); // Fast forward 20 minutes
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId1);
-
-    // Perform actions and save for addr2 with a lower score
-    await game.connect(addr2).feed(tokenId2);
-    await ethers.provider.send("evm_increaseTime", [600]); // Fast forward 10 minutes
-    await game.connect(addr2).manualSaveToLeaderboard(tokenId2);
-
-    // Verify leaderboard placement with addr1 on top
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(leaderboard[0].player).to.equal(addr1.address);
-    expect(leaderboard[1].player).to.equal(addr2.address);
-    expect(leaderboard[0].score).to.be.gt(leaderboard[1].score);
-  });
-
-  it("Should not allow a lower score to overwrite a higher score on the leaderboard", async function () {
+  it("Should not update high score if manual save score is not higher", async function () {
     const tokenId = 0;
-
-    // Perform actions to create a high score
     await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [3600]); // Fast forward 1 hour
+    await ethers.provider.send("evm_increaseTime", [600]);
     await game.connect(addr1).manualSaveToLeaderboard(tokenId);
 
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    const highScore = leaderboard[0].score;
+    const initialScore = await game.playerHighScores(addr1.address);
 
-    // Attempt a manual save with a much lower score
-    await ethers.provider.send("evm_increaseTime", [300]); // Fast forward minimal time
+    // Fast forward slightly but less than last increase and attempt to save
+    await ethers.provider.send("evm_increaseTime", [300]);
     await game.connect(addr1).manualSaveToLeaderboard(tokenId);
 
-    // Verify leaderboard still holds the high score
-    const updatedLeaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(updatedLeaderboard[0].score).to.equal(highScore); // High score remains
+    const newScore = await game.playerHighScores(addr1.address);
+    expect(newScore).to.equal(initialScore); // Score should remain unchanged
   });
 
-  it("Should cap the leaderboard at 10 entries and replace only the lowest score", async function () {
+  it("Should emit LeaderboardUpdated event only on high score increase", async function () {
     const tokenId = 0;
 
-    // Simulate adding 10 players with incrementing scores
-    for (let i = 0; i < 10; i++) {
-      await ethers.provider.send("evm_increaseTime", [i * 600]); // Increase time for each player
-      await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-    }
-
-    // Attempt to add a new score that qualifies for the top 10
-    await ethers.provider.send("evm_increaseTime", [7200]); // Fast forward to achieve a higher score
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(leaderboard[0].score).to.be.gt(leaderboard[9].score); // Top score should be greater than the lowest
-  });
-  // Additional test cases for the leaderboard functionality
-  it("Should allow manual save to leaderboard when MamaGotchi is alive", async function () {
-    const tokenId = 0;
-
-    // Perform a few interactions to accumulate timeAlive
+    // Step 1: First interaction to establish initial high score
     await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [600]); // Fast forward 10 minutes
-    await game.connect(addr1).play(tokenId);
+    await ethers.provider.send("evm_increaseTime", [600]); // Fast-forward 600 seconds (10 minutes)
 
-    // Perform manual save
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    // Capture the transaction and initial high score
+    let tx = await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    const initialHighScore = await game.playerHighScores(addr1.address);
 
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(leaderboard[0].player).to.equal(addr1.address); // Player should be on the leaderboard
-    expect(leaderboard[0].score).to.be.gt(0); // Score should reflect timeAlive
-  });
+    // Assert the initial high score update event
+    await expect(tx)
+      .to.emit(game, "LeaderboardUpdated")
+      .withArgs(addr1.address, initialHighScore, "AllTimeHighRound");
 
-  it("Should not allow duplicate entries for the same player on the leaderboard", async function () {
-    const tokenId = 0;
+    // Step 2: Advance time slightly, below threshold for new high score
+    await ethers.provider.send("evm_increaseTime", [300]); // Fast-forward 300 seconds (5 minutes)
 
-    // Perform interactions and save to leaderboard
-    await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [900]); // Fast forward 15 minutes
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    // Save again and ensure no event is emitted since score didn’t exceed initial
+    tx = await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    await expect(tx).to.not.emit(game, "LeaderboardUpdated");
 
-    // Verify initial leaderboard entry
-    const initialLeaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    const initialScore = initialLeaderboard[0].score;
+    // Step 3: Advance time further to exceed the initial high score
+    await ethers.provider.send("evm_increaseTime", [600]); // Another 600 seconds (10 minutes)
 
-    // Attempt another manual save with minimal additional timeAlive
-    await ethers.provider.send("evm_increaseTime", [300]); // Fast forward minimal time
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    // Save again; this time we expect an event as score should now exceed initial high score
+    tx = await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    const newHighScore = await game.playerHighScores(addr1.address);
 
-    // Verify leaderboard didn't duplicate entry, only updated score if it's higher
-    const updatedLeaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(updatedLeaderboard[0].player).to.equal(addr1.address);
-    expect(updatedLeaderboard[0].score).to.be.equal(initialScore); // Score remains unchanged for insufficient update
-  });
+    await expect(tx)
+      .to.emit(game, "LeaderboardUpdated")
+      .withArgs(addr1.address, newHighScore, "AllTimeHighRound");
 
-  it("Should correctly update leaderboard with multiple players and scores", async function () {
-    // Deploy and mint another Gotchi to addr2
-    const [_, addr2] = await ethers.getSigners();
-    const tokenId1 = 0;
-    await hahaToken.transfer(
-      addr2.address,
-      ethers.parseUnits("1000000000", 18)
-    );
-    await hahaToken
-      .connect(addr2)
-      .approve(game.target, ethers.parseUnits("1000000000", 18));
-    await game.connect(addr2).mintNewGotchi(addr2.address, 0);
-    const tokenId2 = 1;
-
-    // Perform actions and save for addr1
-    await game.connect(addr1).feed(tokenId1);
-    await ethers.provider.send("evm_increaseTime", [1200]); // Fast forward 20 minutes
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId1);
-
-    // Perform actions and save for addr2 with a lower score
-    await game.connect(addr2).feed(tokenId2);
-    await ethers.provider.send("evm_increaseTime", [600]); // Fast forward 10 minutes
-    await game.connect(addr2).manualSaveToLeaderboard(tokenId2);
-
-    // Verify leaderboard placement with addr1 on top
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(leaderboard[0].player).to.equal(addr1.address);
-    expect(leaderboard[1].player).to.equal(addr2.address);
-    expect(leaderboard[0].score).to.be.gt(leaderboard[1].score);
-  });
-
-  it("Should not allow a lower score to overwrite a higher score on the leaderboard", async function () {
-    const tokenId = 0;
-
-    // Perform actions to create a high score
-    await game.connect(addr1).feed(tokenId);
-    await ethers.provider.send("evm_increaseTime", [3600]); // Fast forward 1 hour
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    const highScore = leaderboard[0].score;
-
-    // Attempt a manual save with a much lower score
-    await ethers.provider.send("evm_increaseTime", [300]); // Fast forward minimal time
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    // Verify leaderboard still holds the high score
-    const updatedLeaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(updatedLeaderboard[0].score).to.equal(highScore); // High score remains
-  });
-
-  it("Should cap the leaderboard at 10 entries and replace only the lowest score", async function () {
-    const tokenId = 0;
-
-    // Simulate adding 10 players with incrementing scores
-    for (let i = 0; i < 10; i++) {
-      await ethers.provider.send("evm_increaseTime", [i * 600]); // Increase time for each player
-      await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-    }
-
-    // Attempt to add a new score that qualifies for the top 10
-    await ethers.provider.send("evm_increaseTime", [7200]); // Fast forward to achieve a higher score
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    const leaderboard = await game.getTopAllTimeHighRoundLeaderboard();
-    expect(leaderboard[0].score).to.be.gt(leaderboard[9].score); // Top score should be greater than the lowest
+    // Confirm new high score is greater than initial
+    expect(newHighScore).to.be.gt(initialHighScore);
   });
 });

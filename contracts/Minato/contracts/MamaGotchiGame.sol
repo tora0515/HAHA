@@ -36,7 +36,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
 
     IERC20 public hahaToken; // Reference to the $HAHA token contract
 
-    LeaderboardEntry[10] public topAllTimeHighRound; // Top 10 for all-time high round scores
+    mapping(address => uint256) public playerHighScores;
 
     mapping(uint256 => Gotchi) public gotchiStats;
 
@@ -70,8 +70,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     event LeaderboardUpdated(address indexed player, uint256 newScore, string leaderboardType);
     event CostUpdated(string costType, uint256 newValue);
     event DecayCalculated(uint256 healthDecay, uint256 happinessDecay);
-
-
+   
     constructor(address initialOwner, address hahaTokenAddress) 
         ERC721("MamaGotchiMinato", "MGM") 
         Ownable(initialOwner) 
@@ -170,6 +169,9 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     */
     function checkAndMarkDeath(uint256 tokenId) internal {
         Gotchi storage gotchi = gotchiStats[tokenId];
+        if (gotchi.deathTimestamp != 0) {
+            return; // Already marked as dead
+        }
         if (gotchi.health == 0 || gotchi.happiness == 0) {
             gotchi.deathTimestamp = block.timestamp;
         }
@@ -210,12 +212,27 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         address player = ownerOf(tokenId);
         uint256 timeAliveAtDeath = gotchi.timeAlive + (block.timestamp - gotchi.lastInteraction);
 
-        // Optional save on death
-        if (saveOnDeath) {
-            updateLeaderboard(topAllTimeHighRound, player, timeAliveAtDeath, "AllTimeHighRound", false, tokenId);
+        // Update high score if saveOnDeath is true
+        if (saveOnDeath && timeAliveAtDeath > playerHighScores[player]) {
+            playerHighScores[player] = timeAliveAtDeath;
+            emit LeaderboardUpdated(player, timeAliveAtDeath, "AllTimeHighRound");
         }
 
         emit GotchiDied(player, tokenId);
+    }
+
+    function updateTimeAlive(uint256 tokenId) internal {
+        Gotchi storage gotchi = gotchiStats[tokenId];
+        uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
+        gotchi.timeAlive += elapsedTime;
+        gotchi.lastInteraction = block.timestamp;
+    }
+
+    function requireAndTransferTokens(uint256 amount, string memory action) internal {
+        require(hahaToken.allowance(msg.sender, address(this)) >= amount, 
+            string(abi.encodePacked("Approval required for ", action)));
+        require(hahaToken.transferFrom(msg.sender, address(this), amount), 
+            string(abi.encodePacked(action, " requires $HAHA tokens")));
     }
 
     /**
@@ -237,16 +254,12 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
 
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-        require(hahaToken.allowance(msg.sender, address(this)) >= feedCost, "Approval required for feeding");
-        require(hahaToken.transferFrom(msg.sender, address(this), feedCost), "Feeding requires $HAHA tokens");
         require(block.timestamp >= gotchi.lastFeedTime + cooldowns.feed, "MamaGotchi says: I'm full!");
 
-        // Update timeAlive by calculating time since the last interaction
-        uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
-        gotchi.timeAlive += elapsedTime;
+        // Use helper for token transfer
+        requireAndTransferTokens(feedCost, "feeding");
 
-        // Update lastInteraction to the current time
-        gotchi.lastInteraction = block.timestamp;
+        updateTimeAlive(tokenId); // Update timeAlive and lastInteraction
 
         // Health boost for feeding
         gotchi.health = gotchi.health + 10 > 100 ? 100 : gotchi.health + 10;
@@ -275,14 +288,12 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
 
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-        require(hahaToken.allowance(msg.sender, address(this)) >= playCost, "Approval required for playing");
-        require(hahaToken.transferFrom(msg.sender, address(this), playCost), "Playing requires $HAHA tokens");
         require(block.timestamp >= gotchi.lastPlayTime + cooldowns.play, "MamaGotchi says: I'm tired now!");
 
-        // Update timeAlive
-        uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
-        gotchi.timeAlive += elapsedTime;
-        gotchi.lastInteraction = block.timestamp;
+        // Use helper for token transfer
+        requireAndTransferTokens(playCost, "playing");
+
+        updateTimeAlive(tokenId); // Update timeAlive and lastInteraction
 
         // Increase happiness and update play timestamp
         gotchi.happiness = gotchi.happiness + 10 > 100 ? 100 : gotchi.happiness + 10;
@@ -310,11 +321,8 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         require(block.timestamp >= gotchiStats[tokenId].lastSleepTime + cooldowns.sleep, "MamaGotchi says: I'm not sleepy!");
 
         Gotchi storage gotchi = gotchiStats[tokenId];
-
-        // Update timeAlive
-        uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
-        gotchi.timeAlive += elapsedTime;
-        gotchi.lastInteraction = block.timestamp;
+        
+        updateTimeAlive(tokenId); // Update timeAlive and lastInteraction
 
         // Set the sleep state
         gotchi.isSleeping = true;
@@ -366,81 +374,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         emit DecayCalculated(healthDecay, happinessDecay);
         emit GotchiAwake(msg.sender, tokenId, healthDecay, happinessDecay);
     }
-
-    /**
-    * @dev Updates a leaderboard with a player's time alive if it qualifies for the top 10.
-    * Compares the timeAlive score against the current lowest score on the leaderboard.
-    * Replaces the lowest score if the new score qualifies, then re-sorts the leaderboard.
-    * Emits LeaderboardUpdated event with the player's updated score and leaderboard type.
-    *
-    * Requirements:
-    * - `score` must be non-zero.
-    *
-    * @param leaderboard The leaderboard array (topAllTimeHighRound).
-    * @param player The address of the player whose score is being considered.
-    * @param score The player's time alive score for the leaderboard.
-    * @param leaderboardType A string identifier for the leaderboard type.
-    */
-    function updateLeaderboard(
-    LeaderboardEntry[10] storage leaderboard,
-    address player,
-    uint256 score,
-    string memory leaderboardType,
-    bool isManualSave,
-    uint256 tokenId
-) internal {
-    // Calculate `timeAlive` if this is a manual save
-    if (isManualSave) {
-        uint256 currentTimeAlive = gotchiStats[tokenId].timeAlive + (block.timestamp - gotchiStats[tokenId].lastInteraction);
-        score = currentTimeAlive;
-
-        // Reset lastInteraction for manual save
-        gotchiStats[tokenId].lastInteraction = block.timestamp;
-    }
-
-    // Only proceed if the score qualifies for the leaderboard
-    if (score <= leaderboard[9].score) {
-        return;
-    }
-
-    // Place new entry at the end for initial comparison
-    LeaderboardEntry memory newEntry = LeaderboardEntry(player, score);
-    uint256 i = 9;
-
-    // Shift entries down until the correct position for newEntry is found
-    while (i > 0 && leaderboard[i - 1].score < newEntry.score) {
-        leaderboard[i] = leaderboard[i - 1]; // Move entry down
-        i--;
-    }
-
-    // Insert newEntry at the correct position
-    leaderboard[i] = newEntry;
-
-    // Emit event if the leaderboard was actually updated
-    emit LeaderboardUpdated(player, score, leaderboardType);
-}
-
-    /**
-    * @dev Sorts a given leaderboard array in descending order by score.
-    * Implements bubble sort for simplicity, which is efficient given the fixed length of 10 entries.
-    * Swaps entries in place, ensuring the highest scores appear at the top.
-    *
-    * @param leaderboard The leaderboard array to sort.
-    */
-    function sortLeaderboard(LeaderboardEntry[10] storage leaderboard) internal {
-        for (uint256 i = 0; i < leaderboard.length - 1; i++) {
-            for (uint256 j = 0; j < leaderboard.length - 1 - i; j++) {
-                // Compare scores for descending order
-                if (leaderboard[j].score < leaderboard[j + 1].score) {
-                    // Swap using intermediate memory variables to avoid direct storage-to-storage assignment
-                    LeaderboardEntry memory tempEntry = leaderboard[j];
-                    leaderboard[j] = leaderboard[j + 1];
-                    leaderboard[j + 1] = tempEntry;
-                }
-            }
-        }
-    }
-
+    
     /**
     * @dev Allows the player to manually save their timeAlive to the leaderboard.
     * Calculates the updated timeAlive based on the current time and updates the leaderboard
@@ -452,13 +386,20 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     *
     * @param tokenId The ID of the MamaGotchi whose time alive is being saved.
     */
- function manualSaveToLeaderboard(uint256 tokenId) external nonReentrant {
-    require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-    require(isAlive(tokenId), "MamaGotchi isn't alive!");
+    function manualSaveToLeaderboard(uint256 tokenId) external nonReentrant {
+        require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+        require(isAlive(tokenId), "MamaGotchi isn't alive!");
 
-    // Update leaderboard by calling updateLeaderboard with isManualSave set to true
-    updateLeaderboard(topAllTimeHighRound, msg.sender, 0, "AllTimeHighRound", true, tokenId);
-}
+        // Calculate the current timeAlive but don't update lastInteraction yet
+        uint256 currentTimeAlive = gotchiStats[tokenId].timeAlive + (block.timestamp - gotchiStats[tokenId].lastInteraction);
+
+        // Update high score if current timeAlive exceeds the previous high score
+        if (currentTimeAlive > playerHighScores[msg.sender]) {
+            playerHighScores[msg.sender] = currentTimeAlive;
+            gotchiStats[tokenId].lastInteraction = block.timestamp;
+            emit LeaderboardUpdated(msg.sender, currentTimeAlive, "AllTimeHighRound");
+        }
+    }
 
     /**
      * @dev Updates the mint cost in $HAHA tokens for minting a new MamaGotchi.
@@ -499,7 +440,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         // Calculate decay based on the duration and health decay rate
         return (duration * HEALTH_DECAY_RATE) / (3600 * 100); // Converts to 5.5 points per hour
     }
-
+    
     /**
      * @dev Calculates the happiness decay based on the time elapsed since last sleep.
      * Takes into account a scaled decay rate for precision.
@@ -509,14 +450,6 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     function calculateHappinessDecay(uint256 duration) internal pure returns (uint256) {
         // Calculate decay based on the duration and happiness decay rate
         return (duration * HAPPINESS_DECAY_RATE) / (3600 * 100); // Converts to 4.16 points per hour
-    }
-
-    /**
-    * @dev Returns the top entries in the All-Time High Round leaderboard.
-    * @return LeaderboardEntry[] The array of top 10 leaderboard entries.
-    */
-    function getTopAllTimeHighRoundLeaderboard() external view returns (LeaderboardEntry[10] memory) {
-        return topAllTimeHighRound;
     }
 
 //###########################################################################
