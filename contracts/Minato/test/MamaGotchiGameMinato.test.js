@@ -1,3 +1,58 @@
+/**
+* Helper functions - paste at end of MamaGotchiGameMinato.sol prior to running tests.
+
+function getFeedCooldown() external view returns (uint256) {
+    return cooldowns.feed;
+}
+
+function getPlayCooldown() external view returns (uint256) {
+    return cooldowns.play;
+}
+
+function getSleepCooldown() external view returns (uint256) {
+    return cooldowns.sleep;
+}
+
+function getCooldownTime(string memory action) external view returns (uint256) {
+    if (keccak256(bytes(action)) == keccak256(bytes("play"))) {
+        return cooldowns.play;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("feed"))) {
+        return cooldowns.feed;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("sleep"))) {
+        return cooldowns.sleep;
+    } else {
+        revert("Invalid action");
+    }
+}
+
+function isActionReady(string memory action, uint256 tokenId) external view returns (bool) {
+    Gotchi storage gotchi = gotchiStats[tokenId];
+    
+    if (keccak256(bytes(action)) == keccak256(bytes("play"))) {
+        return block.timestamp >= gotchi.lastPlayTime + cooldowns.play;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("feed"))) {
+        return block.timestamp >= gotchi.lastFeedTime + cooldowns.feed;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("sleep"))) {
+        return block.timestamp >= gotchi.lastSleepTime + cooldowns.sleep;
+    } else {
+        revert("Invalid action");
+    }
+}
+
+function isTokenOwner(uint256 tokenId, address expectedOwner) external view returns (bool) {
+    return ownerOf(tokenId) == expectedOwner;
+}
+
+function testCheckAndMarkDeath(uint256 tokenId) external {
+    checkAndMarkDeath(tokenId);
+}
+
+function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint256 happiness) external onlyOwner {
+    gotchiStats[tokenId].health = health;
+    gotchiStats[tokenId].happiness = happiness;
+}
+ */
+
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
@@ -68,14 +123,21 @@ describe("MamaGotchiGame Contract - Time and Cooldown Functionality", function (
     expect(gotchi.isSleeping).to.equal(true);
   });
 
-  it("Should wake up and apply decay with max duration capped", async function () {
+  it("Should wake up and apply decay only for the time beyond the 8-hour cap", async function () {
     const tokenId = 0;
     await game.connect(addr1).sleep(tokenId);
-    await ethers.provider.send("evm_increaseTime", [8 * 60 * 60 + 10]); // Move time forward beyond max sleep
+    await ethers.provider.send("evm_increaseTime", [9 * 60 * 60]); // Move time forward by 9 hours
     await game.connect(addr1).wake(tokenId);
 
     const gotchi = await game.gotchiStats(tokenId);
-    expect(gotchi.health).to.be.lte(100 - 5.5 * 8); // Check decay capped at max sleep duration
+
+    // Calculate expected health after only 1 hour of decay (9 - 8 hours capped)
+    const initialHealth = 80; // Assuming newly minted Gotchi health starts at 80
+    const healthDecay = Math.floor(5.5 * 1); // Calculate decay for 1 hour at 5.5 per hour
+    const finalHealth =
+      initialHealth > healthDecay ? initialHealth - healthDecay : 0; // Prevent negative health
+
+    expect(gotchi.health).to.equal(finalHealth);
   });
 
   it("Should prevent sleep before cooldown", async function () {
@@ -359,5 +421,222 @@ describe("MamaGotchiGame Contract - Time and Cooldown Functionality", function (
 
     // Confirm new high score is greater than initial
     expect(newHighScore).to.be.gt(initialHighScore);
+  });
+
+  it("Should enforce cooldowns accurately and independently when actions are mixed", async function () {
+    const tokenId = 0;
+
+    // Step 1: Perform feed action and ensure play can be called independently
+    await game.connect(addr1).feed(tokenId);
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted; // Play should be independent of feed cooldown
+
+    // Step 2: Execute sleep and block consecutive sleep until wake clears it
+    await game.connect(addr1).sleep(tokenId); // First sleep action
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm already in dreamland, shhh!"
+    );
+
+    // Step 3: Wake up the Gotchi to reset sleep state
+    await ethers.provider.send("evm_increaseTime", [8 * 60 * 60 + 10]); // Move time forward beyond max sleep to apply decay
+    await game.connect(addr1).wake(tokenId); // Wake the Gotchi
+
+    // Step 4: Advance time for play and feed cooldowns without affecting sleep
+    const playCooldown = await game.getPlayCooldown();
+    const feedCooldown = await game.getFeedCooldown();
+    await ethers.provider.send("evm_increaseTime", [
+      Number(playCooldown) + Number(feedCooldown),
+    ]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Feed and play should now be available again
+    await expect(game.connect(addr1).feed(tokenId)).to.not.be.reverted;
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted;
+
+    // Step 5: Verify that sleep can be re-entered after cooldown, since wake was called
+    const sleepCooldown = await game.getSleepCooldown();
+    await ethers.provider.send("evm_increaseTime", [Number(sleepCooldown)]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Re-enter sleep, confirming independent cooldown reset
+    await expect(game.connect(addr1).sleep(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should consistently update timeAlive using updateTimeAlive helper across actions", async function () {
+    const tokenId = 0;
+
+    // Perform initial action (feed) and capture timeAlive
+    await game.connect(addr1).feed(tokenId);
+    const initialTimeAlive = (await game.gotchiStats(tokenId)).timeAlive;
+
+    // Fast-forward time
+    await ethers.provider.send("evm_increaseTime", [300]); // 5 minutes
+    await ethers.provider.send("evm_mine", []);
+
+    // Perform another action (play) to trigger timeAlive update
+    await game.connect(addr1).play(tokenId);
+    const updatedTimeAlive = (await game.gotchiStats(tokenId)).timeAlive;
+
+    // Assert that timeAlive increased
+    expect(updatedTimeAlive).to.be.gt(initialTimeAlive);
+  });
+
+  it("Should enforce token transfer requirements with requireAndTransferTokens helper", async function () {
+    const tokenId = 0;
+
+    // Revoke allowance for HAHA tokens
+    await hahaToken.connect(addr1).approve(game.target, 0);
+
+    // Expect action to fail due to lack of token allowance
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "Approval required for feeding"
+    );
+
+    // Re-approve tokens and ensure the action succeeds
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+    await expect(game.connect(addr1).feed(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should enforce independent cooldowns for different actions", async function () {
+    const tokenId = 0;
+
+    // Initiate feed action to start its cooldown
+    await game.connect(addr1).feed(tokenId);
+
+    // Play action should still be allowed since it has a separate cooldown
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted;
+
+    // Sleep action should also be allowed
+    await expect(game.connect(addr1).sleep(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should mark Gotchi as dead when health or happiness reaches zero", async function () {
+    const tokenId = 0;
+
+    // Reduce health to zero and invoke the death check directly
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 0, 50);
+    await game.connect(owner).testCheckAndMarkDeath(tokenId); // Directly check and mark death
+
+    // Fetch Gotchi stats to verify death
+    let gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.deathTimestamp).to.be.gt(0); // Verify that death timestamp is set
+
+    // Reset Gotchi and test with happiness at zero
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 50, 0);
+    await game.connect(owner).testCheckAndMarkDeath(tokenId);
+
+    // Fetch Gotchi stats again to verify death marking
+    gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.deathTimestamp).to.be.gt(0); // Confirm death timestamp is set
+  });
+
+  it("Should correctly apply health and happiness decay upon waking after sleep", async function () {
+    const tokenId = 0;
+
+    // Step 1: Put Gotchi to sleep right after minting (starts at 80 health and 80 happiness)
+    await game.connect(addr1).sleep(tokenId);
+
+    // Step 2: Fast-forward exactly to the 8-hour cap and wake Gotchi
+    const sleepDurationWithinCap = 8 * 60 * 60; // 8 hours
+    await ethers.provider.send("evm_increaseTime", [sleepDurationWithinCap]);
+    await game.connect(addr1).wake(tokenId);
+
+    const gotchi = await game.gotchiStats(tokenId);
+
+    // Expect health and happiness to remain at the initial mint values of 80 each
+    expect(gotchi.health).to.equal(80); // No decay expected
+    expect(gotchi.happiness).to.equal(80); // No decay expected
+  });
+
+  it("Should enforce unique cooldowns for each action", async function () {
+    const tokenId = 0;
+
+    // Perform feed action
+    await game.connect(addr1).feed(tokenId);
+    // Attempt to feed again immediately, should revert due to cooldown
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm full!"
+    );
+
+    // Play action should still be allowed as it has its own cooldown
+    await game.connect(addr1).play(tokenId);
+
+    // Attempt to play again immediately, should revert due to cooldown
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm tired now!"
+    );
+
+    // Sleep action should still be allowed as it has its own cooldown
+    await game.connect(addr1).sleep(tokenId);
+
+    // Attempt to sleep again immediately, should revert due to cooldown
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm already in dreamland, shhh!"
+    );
+  });
+
+  it("Should retrieve the correct cooldown times for feed, play, and sleep actions", async function () {
+    const feedCooldown = await game.getFeedCooldown();
+    const playCooldown = await game.getPlayCooldown();
+    const sleepCooldown = await game.getSleepCooldown();
+
+    // Expected cooldown values in seconds
+    const expectedFeedCooldown = 10 * 60; // 10 minutes
+    const expectedPlayCooldown = 15 * 60; // 15 minutes
+    const expectedSleepCooldown = 1 * 60 * 60; // 1 hour
+
+    // Check if the cooldown values are as expected
+    expect(feedCooldown).to.equal(expectedFeedCooldown);
+    expect(playCooldown).to.equal(expectedPlayCooldown);
+    expect(sleepCooldown).to.equal(expectedSleepCooldown);
+  });
+
+  it("Should correctly report cooldown ready status for feed, play, and sleep actions", async function () {
+    const tokenId = 0;
+
+    // Start each action to initiate their cooldowns
+    await game.connect(addr1).feed(tokenId);
+    await game.connect(addr1).play(tokenId);
+    await game.connect(addr1).sleep(tokenId);
+
+    // Retrieve cooldowns
+    const feedCooldown = await game.getFeedCooldown();
+    const playCooldown = await game.getPlayCooldown();
+    const sleepCooldown = await game.getSleepCooldown();
+
+    // Check action readiness immediately after initiating; all should be false
+    expect(await game.isActionReady("feed", tokenId)).to.be.false;
+    expect(await game.isActionReady("play", tokenId)).to.be.false;
+    expect(await game.isActionReady("sleep", tokenId)).to.be.false;
+
+    // Fast-forward time for each cooldown and check readiness status
+    await ethers.provider.send("evm_increaseTime", [Number(feedCooldown)]);
+    await ethers.provider.send("evm_mine", []);
+    expect(await game.isActionReady("feed", tokenId)).to.be.true;
+
+    await ethers.provider.send("evm_increaseTime", [
+      Number(playCooldown) - Number(feedCooldown),
+    ]);
+    await ethers.provider.send("evm_mine", []);
+    expect(await game.isActionReady("play", tokenId)).to.be.true;
+
+    await ethers.provider.send("evm_increaseTime", [
+      Number(sleepCooldown) - Number(playCooldown),
+    ]);
+    await ethers.provider.send("evm_mine", []);
+    expect(await game.isActionReady("sleep", tokenId)).to.be.true;
+  });
+
+  it("Should revert with an invalid action name in getCooldownTime and isActionReady", async function () {
+    const tokenId = 0;
+
+    // Attempt to get the cooldown time for an invalid action name
+    await expect(game.getCooldownTime("invalidAction")).to.be.revertedWith(
+      "Invalid action"
+    );
+
+    // Attempt to check readiness for an invalid action name
+    await expect(
+      game.isActionReady("invalidAction", tokenId)
+    ).to.be.revertedWith("Invalid action");
   });
 });
