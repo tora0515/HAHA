@@ -118,12 +118,11 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         return super._update(to, tokenId, auth);
     }
 
-    /**
+        /**
     * @dev Mints a new MamaGotchi NFT for the specified address. Optionally burns an old token if provided.
     * Requires the caller to have approved the contract to transfer the `mintCost` in $HAHA tokens.
-    * Initializes new Gotchi with default health and happiness.
-    * Awards points for minting and updates the player's high score if applicable.
-    * Emits a GotchiMinted event with details of the new token and awarded points.
+    * Initializes a new Gotchi with default health, happiness, and starts tracking time alive.
+    * Emits a GotchiMinted event with the player and token ID details.
     *
     * Requirements:
     * - `tokenIdToBurn` must be owned by the caller (if provided) and must be deceased (health and happiness at zero).
@@ -164,9 +163,8 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
 
     /**
     * @dev Checks if a given MamaGotchi's health or happiness has reached zero.
-    * If either is zero, the function updates the Gotchi's `deathTimestamp`.
-    * This function is called internally within gameplay interactions (e.g., `feed`, `play`, `wake`) to
-    * automatically mark a Gotchi as deceased when necessary.
+    * If either is zero, updates the Gotchi's `deathTimestamp`.
+    * This function is called within gameplay interactions to mark a Gotchi as deceased if needed.
     *
     * @param tokenId The ID of the MamaGotchi to evaluate.
     */
@@ -180,7 +178,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     /**
     * @dev Checks if a MamaGotchi is alive based on health, happiness, and `deathTimestamp`.
     * Returns `true` if both health and happiness are greater than zero, and `deathTimestamp` is unset.
-    * Used in gameplay functions to ensure interactions are only possible with living Gotchis.
+    * Used to ensure interactions are only possible with living Gotchis.
     *
     * @param tokenId The ID of the MamaGotchi to check.
     * @return True if the MamaGotchi is alive, false otherwise.
@@ -192,8 +190,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     
     /**
     * @dev Marks a MamaGotchi as deceased by setting its `deathTimestamp`.
-    * Applies point penalties, updates the player’s leaderboard standings, and resets the round points.
-    * Only callable by the contract owner, typically during administrative checks or game resets.
+    * If `saveOnDeath` is set to true, the player's time alive is saved to the leaderboard.
     * Emits a GotchiDied event if the Gotchi is marked as dead.
     *
     * Requirements:
@@ -201,8 +198,9 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     * - Caller must be the contract owner.
     *
     * @param tokenId The ID of the MamaGotchi to set as dead.
+    * @param saveOnDeath Boolean indicating if time alive should be saved to the leaderboard upon death.
     */
-    function setDeath(uint256 tokenId) external onlyOwner nonReentrant {
+    function setDeath(uint256 tokenId, bool saveOnDeath) external onlyOwner nonReentrant {
         require(ownerOf(tokenId) != address(0), "Token does not exist");
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(gotchi.health == 0 || gotchi.happiness == 0, "MamaGotchi isn't dead! Be a Good Kid and treat her well!");
@@ -210,19 +208,21 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         gotchi.deathTimestamp = block.timestamp;
 
         address player = ownerOf(tokenId);
+        uint256 timeAliveAtDeath = gotchi.timeAlive + (block.timestamp - gotchi.lastInteraction);
 
-         // Calculate timeAlive and update the leaderboard based on time alive instead of points
-        uint256 timeAlive = block.timestamp - gotchi.lastInteraction;
-        updateLeaderboard(topAllTimeHighRound, player, timeAlive, "AllTimeHighRound");
+        // Optional save on death
+        if (saveOnDeath) {
+            updateLeaderboard(topAllTimeHighRound, player, timeAliveAtDeath, "AllTimeHighRound", false, tokenId);
+        }
 
         emit GotchiDied(player, tokenId);
-}
-
+    }
 
     /**
     * @dev Feeds MamaGotchi, increasing its health by a fixed amount. Requires cooldown period
     * to have elapsed since the last feeding. Only the token owner can initiate feeding.
-    * Emits a GotchiFed event with feeding points.
+    * Updates the timeAlive counter based on time since last interaction.
+    * Emits a GotchiFed event.
     *
     * Requirements:
     * - Caller must be the owner of the token.
@@ -258,8 +258,8 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     /**
     * @dev Allows the player to play with their MamaGotchi, increasing happiness.
     * Requires approval for spending $HAHA tokens and enforces a cooldown period.
-    * Awards Gotchi points and updates the player’s high score if the round score exceeds it.
-    * Emits GotchiPlayed event with playing points.
+    * Updates the timeAlive counter based on time since last interaction.
+    * Emits GotchiPlayed event.
     *
     * Requirements:
     * - Caller must be the owner of the token.
@@ -294,8 +294,8 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     /**
     * @dev Puts the MamaGotchi to sleep, pausing health and happiness decay.
     * Requires the token owner to initiate and enforces a cooldown between sleep actions.
-    * Records the start time and resets the cooldown timer.
-    * Emits GotchiSleeping event with the start time.
+    * Updates the timeAlive counter and records the start time of sleep.
+    * Emits GotchiSleeping event.
     *
     * Requirements:
     * - Caller must be the token owner.
@@ -327,7 +327,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     /**
     * @dev Wakes the MamaGotchi, applying accumulated decay to health and happiness.
     * Caps decay at `MAX_SLEEP_DURATION` and resets the sleep state.
-    * Uses `checkAndMarkDeath` to update Gotchi's status if health or happiness falls to zero.
+    * Updates the timeAlive counter based on time since the last interaction.
     * Emits GotchiAwake and DecayCalculated events.
     *
     * Requirements:
@@ -368,39 +368,57 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     }
 
     /**
-    * @dev Updates a leaderboard with a player's score if it qualifies for the top 10.
-    * Compares the score against the current lowest score on the leaderboard.
+    * @dev Updates a leaderboard with a player's time alive if it qualifies for the top 10.
+    * Compares the timeAlive score against the current lowest score on the leaderboard.
     * Replaces the lowest score if the new score qualifies, then re-sorts the leaderboard.
     * Emits LeaderboardUpdated event with the player's updated score and leaderboard type.
     *
     * Requirements:
     * - `score` must be non-zero.
     *
-    * @param leaderboard The leaderboard array (either topAllTimeHighRound or topCumulativePoints).
+    * @param leaderboard The leaderboard array (topAllTimeHighRound).
     * @param player The address of the player whose score is being considered.
-    * @param score The player's score for the given leaderboard.
+    * @param score The player's time alive score for the leaderboard.
     * @param leaderboardType A string identifier for the leaderboard type.
     */
     function updateLeaderboard(
-        LeaderboardEntry[10] storage leaderboard,
-        address player,
-        uint256 score,
-        string memory leaderboardType
-    ) internal {
-        // Ensure that only scores greater than the lowest score (leaderboard[9]) are added
-        if (score <= leaderboard[9].score) {
-            return;
-        }
+    LeaderboardEntry[10] storage leaderboard,
+    address player,
+    uint256 score,
+    string memory leaderboardType,
+    bool isManualSave,
+    uint256 tokenId
+) internal {
+    // Calculate `timeAlive` if this is a manual save
+    if (isManualSave) {
+        uint256 currentTimeAlive = gotchiStats[tokenId].timeAlive + (block.timestamp - gotchiStats[tokenId].lastInteraction);
+        score = currentTimeAlive;
 
-        // Insert the new score in place of the lowest one
-        leaderboard[9] = LeaderboardEntry(player, score);
-
-        // Sort leaderboard to maintain descending order by score
-        sortLeaderboard(leaderboard);
-
-        // Emit the LeaderboardUpdated event with leaderboard type
-        emit LeaderboardUpdated(player, score, leaderboardType);
+        // Reset lastInteraction for manual save
+        gotchiStats[tokenId].lastInteraction = block.timestamp;
     }
+
+    // Only proceed if the score qualifies for the leaderboard
+    if (score <= leaderboard[9].score) {
+        return;
+    }
+
+    // Place new entry at the end for initial comparison
+    LeaderboardEntry memory newEntry = LeaderboardEntry(player, score);
+    uint256 i = 9;
+
+    // Shift entries down until the correct position for newEntry is found
+    while (i > 0 && leaderboard[i - 1].score < newEntry.score) {
+        leaderboard[i] = leaderboard[i - 1]; // Move entry down
+        i--;
+    }
+
+    // Insert newEntry at the correct position
+    leaderboard[i] = newEntry;
+
+    // Emit event if the leaderboard was actually updated
+    emit LeaderboardUpdated(player, score, leaderboardType);
+}
 
     /**
     * @dev Sorts a given leaderboard array in descending order by score.
@@ -422,6 +440,25 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
             }
         }
     }
+
+    /**
+    * @dev Allows the player to manually save their timeAlive to the leaderboard.
+    * Calculates the updated timeAlive based on the current time and updates the leaderboard
+    * if the score qualifies. Resets the lastInteraction timestamp.
+    *
+    * Requirements:
+    * - Caller must be the owner of the token.
+    * - MamaGotchi must be alive.
+    *
+    * @param tokenId The ID of the MamaGotchi whose time alive is being saved.
+    */
+ function manualSaveToLeaderboard(uint256 tokenId) external nonReentrant {
+    require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+    require(isAlive(tokenId), "MamaGotchi isn't alive!");
+
+    // Update leaderboard by calling updateLeaderboard with isManualSave set to true
+    updateLeaderboard(topAllTimeHighRound, msg.sender, 0, "AllTimeHighRound", true, tokenId);
+}
 
     /**
      * @dev Updates the mint cost in $HAHA tokens for minting a new MamaGotchi.
@@ -524,6 +561,11 @@ function isActionReady(string memory action, uint256 tokenId) external view retu
     }
 }
 
+function isTokenOwner(uint256 tokenId, address expectedOwner) external view returns (bool) {
+    return ownerOf(tokenId) == expectedOwner;
+}
+
+
 
 
 
@@ -548,9 +590,9 @@ function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint25
 }
 
 // Helper function to directly update the leaderboard for testing
-function testUpdateLeaderboard(address player, uint256 score) external onlyOwner {
+/*function testUpdateLeaderboard(address player, uint256 score) external onlyOwner {
     updateLeaderboard(topAllTimeHighRound, player, score, "AllTimeHighRound");
 }
-
+*/
 
 }
