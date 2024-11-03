@@ -34,28 +34,11 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     uint256 public feedCost;
     uint256 public playCost;
 
-    // Points structure for gameplay interactions
-    struct GotchiPoints {
-        uint256 minting;
-        uint256 feeding;
-        uint256 playing;
-        uint256 deathPenalty;
-    }
-
-    GotchiPoints public points = GotchiPoints({
-        minting: 20,           // Points awarded for minting
-        feeding: 10,           // Points awarded for feeding
-        playing: 10,           // Points awarded for playing
-        deathPenalty: 30       // Points deducted on death
-    });
-
     IERC20 public hahaToken; // Reference to the $HAHA token contract
 
     LeaderboardEntry[10] public topAllTimeHighRound; // Top 10 for all-time high round scores
-    LeaderboardEntry[10] public topCumulativePoints;  // Top 10 for cumulative scores
 
-    mapping(uint256 => Gotchi) public gotchiStats; 
-    mapping(address => PlayerStats) public playerStats;
+    mapping(uint256 => Gotchi) public gotchiStats;
 
     // Represents a single MamaGotchi's core attributes and state
     struct Gotchi {
@@ -67,6 +50,8 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         uint256 lastFeedTime;
         uint256 lastPlayTime;
         uint256 lastSleepTime;
+        uint256 lastInteraction;
+        uint256 timeAlive; 
     }
 
     // Leaderboard Struct
@@ -75,23 +60,15 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         uint256 score;
     }
 
-    // Player Stats
-    struct PlayerStats {
-        uint256 roundPoints;
-        uint256 cumulativePoints;
-        uint256 allTimeHighRound;
-    }
-
     // Event definitions
-    event GotchiMinted(address indexed player, uint256 tokenId, uint256 mintingPoints);
-    event GotchiFed(address indexed player, uint256 tokenId, uint256 feedingPoints);
-    event GotchiPlayed(address indexed player, uint256 tokenId, uint256 playingPoints);
+    event GotchiMinted(address indexed player, uint256 tokenId);
+    event GotchiFed(address indexed player, uint256 tokenId);
+    event GotchiPlayed(address indexed player, uint256 tokenId);
     event GotchiSleeping(address indexed player, uint256 tokenId, uint256 sleepStartTime);
     event GotchiAwake(address indexed player, uint256 tokenId, uint256 healthDecay, uint256 happinessDecay);
-    event GotchiDied(address indexed player, uint256 tokenId, uint256 deathPenaltyPoints);
+    event GotchiDied(address indexed player, uint256 tokenId);
     event LeaderboardUpdated(address indexed player, uint256 newScore, string leaderboardType);
     event CostUpdated(string costType, uint256 newValue);
-    event PointsUpdated(string pointsType, uint256 newValue);
     event DecayCalculated(uint256 healthDecay, uint256 happinessDecay);
 
 
@@ -169,19 +146,20 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
 
         uint256 newTokenId = _nextTokenId++;
         _safeMint(to, newTokenId);
-        gotchiStats[newTokenId] = Gotchi(80, 80, 0, false, 0, 0, 0,0); // Initialize health, happiness, deathTimestamp, isSleeping, sleepStartTime, lastFeedTime, and lastPlayTime
+        gotchiStats[newTokenId] = Gotchi(
+            80,       // health
+            80,       // happiness
+            0,        // deathTimestamp
+            false,    // isSleeping
+            0,        // sleepStartTime
+            0,        // lastFeedTime
+            0,        // lastPlayTime
+            0,        // lastSleepTime
+            block.timestamp, // lastInteraction, start tracking time alive
+            0         // timeAlive starts at 0
+        );
 
-        // Award points for minting
-        playerStats[to].roundPoints += points.minting;
-        playerStats[to].cumulativePoints += points.minting;
-
-        // Update all-time high round score if the new round score exceeds it
-        if (playerStats[to].roundPoints > playerStats[to].allTimeHighRound) {
-            playerStats[to].allTimeHighRound = playerStats[to].roundPoints;
-        }
-
-        // Emit GotchiMinted event
-        emit GotchiMinted(to, newTokenId, points.minting);
+        emit GotchiMinted(to, newTokenId);
     }
 
     /**
@@ -232,20 +210,14 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         gotchi.deathTimestamp = block.timestamp;
 
         address player = ownerOf(tokenId);
-        if (playerStats[player].roundPoints > playerStats[player].allTimeHighRound) {
-            playerStats[player].allTimeHighRound = playerStats[player].roundPoints;
-        }
-        playerStats[player].cumulativePoints = playerStats[player].cumulativePoints > points.deathPenalty
-        ? playerStats[player].cumulativePoints - points.deathPenalty 
-        : 0;
 
-        playerStats[player].roundPoints = 0; // Reset round points
+         // Calculate timeAlive and update the leaderboard based on time alive instead of points
+        uint256 timeAlive = block.timestamp - gotchi.lastInteraction;
+        updateLeaderboard(topAllTimeHighRound, player, timeAlive, "AllTimeHighRound");
 
-        emit GotchiDied(player, tokenId, points.deathPenalty);
+        emit GotchiDied(player, tokenId);
+}
 
-        updateLeaderboard(topAllTimeHighRound, player, playerStats[player].allTimeHighRound, "AllTimeHighRound");
-        updateLeaderboard(topCumulativePoints, player, playerStats[player].cumulativePoints, "CumulativePoints");
-     }
 
     /**
     * @dev Feeds MamaGotchi, increasing its health by a fixed amount. Requires cooldown period
@@ -269,21 +241,18 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         require(hahaToken.transferFrom(msg.sender, address(this), feedCost), "Feeding requires $HAHA tokens");
         require(block.timestamp >= gotchi.lastFeedTime + cooldowns.feed, "MamaGotchi says: I'm full!");
 
+        // Update timeAlive by calculating time since the last interaction
+        uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
+        gotchi.timeAlive += elapsedTime;
+
+        // Update lastInteraction to the current time
+        gotchi.lastInteraction = block.timestamp;
+
+        // Health boost for feeding
         gotchi.health = gotchi.health + 10 > 100 ? 100 : gotchi.health + 10;
         gotchi.lastFeedTime = block.timestamp;
 
-        // Use a local variable to manage points before re-assigning
-        PlayerStats memory playerStatsTemp = playerStats[msg.sender];
-        playerStatsTemp.roundPoints += points.feeding;
-        playerStatsTemp.cumulativePoints += points.feeding;
-
-        if (playerStatsTemp.roundPoints > playerStatsTemp.allTimeHighRound) {
-            playerStatsTemp.allTimeHighRound = playerStatsTemp.roundPoints;
-        }
-
-        playerStats[msg.sender] = playerStatsTemp; // Assign updated struct back to storage
-
-        emit GotchiFed(msg.sender, tokenId, points.feeding);
+        emit GotchiFed(msg.sender, tokenId);
     }
 
     /**
@@ -302,7 +271,7 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     */
     function play(uint256 tokenId) external nonReentrant {
         require(isAlive(tokenId), "MamaGotchi isn't alive!");
-        checkAndMarkDeath(tokenId);  // Check if Gotchi should be marked as dead
+        checkAndMarkDeath(tokenId);
 
         Gotchi storage gotchi = gotchiStats[tokenId];
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
@@ -310,22 +279,16 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         require(hahaToken.transferFrom(msg.sender, address(this), playCost), "Playing requires $HAHA tokens");
         require(block.timestamp >= gotchi.lastPlayTime + cooldowns.play, "MamaGotchi says: I'm tired now!");
 
-        // Apply happiness increase and update timestamp
+        // Update timeAlive
+        uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
+        gotchi.timeAlive += elapsedTime;
+        gotchi.lastInteraction = block.timestamp;
+
+        // Increase happiness and update play timestamp
         gotchi.happiness = gotchi.happiness + 10 > 100 ? 100 : gotchi.happiness + 10;
         gotchi.lastPlayTime = block.timestamp;
 
-        // Use a local variable to manage points before re-assigning
-        PlayerStats memory playerStatsTemp = playerStats[msg.sender];
-        playerStatsTemp.roundPoints += points.playing;
-        playerStatsTemp.cumulativePoints += points.playing;
-
-        if (playerStatsTemp.roundPoints > playerStatsTemp.allTimeHighRound) {
-            playerStatsTemp.allTimeHighRound = playerStatsTemp.roundPoints;
-        }
-
-        playerStats[msg.sender] = playerStatsTemp; // Write updated struct back to storage
-
-        emit GotchiPlayed(msg.sender, tokenId, points.playing);
+        emit GotchiPlayed(msg.sender, tokenId);
     }
 
     /**
@@ -344,19 +307,20 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     function sleep(uint256 tokenId) external nonReentrant {
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(!gotchiStats[tokenId].isSleeping, "MamaGotchi says: I'm already in dreamland, shhh!");
+        require(block.timestamp >= gotchiStats[tokenId].lastSleepTime + cooldowns.sleep, "MamaGotchi says: I'm not sleepy!");
 
-        // Check if the cooldown period has elapsed
-        require(
-            block.timestamp >= gotchiStats[tokenId].lastSleepTime + cooldowns.sleep,
-            "MamaGotchi says: I'm not sleepy!"
-        );
+        Gotchi storage gotchi = gotchiStats[tokenId];
 
-        // Set the sleep state and timestamp
-        gotchiStats[tokenId].isSleeping = true;
-        gotchiStats[tokenId].sleepStartTime = block.timestamp;
-        gotchiStats[tokenId].lastSleepTime = block.timestamp; // Update the lastSleepTime with the current time
+        // Update timeAlive
+        uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
+        gotchi.timeAlive += elapsedTime;
+        gotchi.lastInteraction = block.timestamp;
 
-        // Emit GotchiSleeping event
+        // Set the sleep state
+        gotchi.isSleeping = true;
+        gotchi.sleepStartTime = block.timestamp;
+        gotchi.lastSleepTime = block.timestamp;
+
         emit GotchiSleeping(msg.sender, tokenId, block.timestamp);
     }
 
@@ -376,25 +340,28 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(gotchiStats[tokenId].isSleeping, "MamaGotchi says: I'm already awake!");
 
-        uint256 sleepDuration = block.timestamp - gotchiStats[tokenId].sleepStartTime;
+        Gotchi storage gotchi = gotchiStats[tokenId];
+
+        uint256 sleepDuration = block.timestamp - gotchi.sleepStartTime;
         if (sleepDuration > MAX_SLEEP_DURATION) {
             sleepDuration = MAX_SLEEP_DURATION;
         }
 
-        // Calculate and apply decay
+        // Calculate decay due to sleeping
         uint256 healthDecay = calculateHealthDecay(sleepDuration);
         uint256 happinessDecay = calculateHappinessDecay(sleepDuration);
-        gotchiStats[tokenId].health = gotchiStats[tokenId].health > healthDecay ? 
-            gotchiStats[tokenId].health - healthDecay : 0;
-        gotchiStats[tokenId].happiness = gotchiStats[tokenId].happiness > happinessDecay ? 
-            gotchiStats[tokenId].happiness - happinessDecay : 0;
+        gotchi.health = gotchi.health > healthDecay ? gotchi.health - healthDecay : 0;
+        gotchi.happiness = gotchi.happiness > happinessDecay ? gotchi.happiness - happinessDecay : 0;
 
-        // Mark Gotchi as dead if health or happiness hit zero
+        // Update timeAlive
+        uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
+        gotchi.timeAlive += elapsedTime;
+        gotchi.lastInteraction = block.timestamp;
+
+        // Reset sleep state and check if Gotchi is dead
+        gotchi.isSleeping = false;
+        gotchi.sleepStartTime = 0;
         checkAndMarkDeath(tokenId);
-
-        // Reset sleep state and emit relevant events
-        gotchiStats[tokenId].isSleeping = false;
-        gotchiStats[tokenId].sleepStartTime = 0;
 
         emit DecayCalculated(healthDecay, happinessDecay);
         emit GotchiAwake(msg.sender, tokenId, healthDecay, happinessDecay);
@@ -434,8 +401,6 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         // Emit the LeaderboardUpdated event with leaderboard type
         emit LeaderboardUpdated(player, score, leaderboardType);
     }
-
-
 
     /**
     * @dev Sorts a given leaderboard array in descending order by score.
@@ -488,36 +453,6 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     }
 
     /**
-    * @dev Updates the points awarded for minting a MamaGotchi.
-    * Can only be called by the contract owner.
-    * @param newPointsMinting The new number of points awarded for minting.
-    */
-    function setMintingPoints(uint256 newPointsMinting) external onlyOwner {
-        points.minting = newPointsMinting;
-        emit PointsUpdated("MintingPoints", newPointsMinting);
-    }
-
-    /**
-    * @dev Updates the points awarded for feeding a MamaGotchi.
-    * Can only be called by the contract owner.
-    * @param newPointsFeeding The new number of points awarded for feeding.
-    */
-    function setFeedingPoints(uint256 newPointsFeeding) external onlyOwner {
-        points.feeding = newPointsFeeding;
-        emit PointsUpdated("FeedingPoints", newPointsFeeding);
-    }
-
-    /**
-    * @dev Updates the points awarded for playing with a MamaGotchi.
-    * Can only be called by the contract owner.
-    * @param newPointsPlaying The new number of points awarded for playing.
-    */
-    function setPlayingPoints(uint256 newPointsPlaying) external onlyOwner {
-        points.playing = newPointsPlaying;
-        emit PointsUpdated("PlayingPoints", newPointsPlaying);
-    }
-
-    /**
      * @dev Calculates the health decay based on the time elapsed since last sleep.
      * Takes into account a scaled decay rate for precision.
      * @param duration The duration in seconds for which the decay applies.
@@ -547,11 +482,75 @@ contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
         return topAllTimeHighRound;
     }
 
-    /**
-    * @dev Returns the top entries in the Cumulative Points leaderboard.
-    * @return LeaderboardEntry[] The array of top 10 leaderboard entries.
-    */
-    function getTopCumulativePointsLeaderboard() external view returns (LeaderboardEntry[10] memory) {
-        return topCumulativePoints;
+//###########################################################################
+//###########################################################################
+
+// Helper functions to retrieve each cooldown duration as a uint256
+function getFeedCooldown() external view returns (uint256) {
+    return cooldowns.feed;
+}
+
+function getPlayCooldown() external view returns (uint256) {
+    return cooldowns.play;
+}
+
+function getSleepCooldown() external view returns (uint256) {
+    return cooldowns.sleep;
+}
+
+function getCooldownTime(string memory action) external view returns (uint256) {
+    if (keccak256(bytes(action)) == keccak256(bytes("play"))) {
+        return cooldowns.play;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("feed"))) {
+        return cooldowns.feed;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("sleep"))) {
+        return cooldowns.sleep;
+    } else {
+        revert("Invalid action");
     }
+}
+
+function isActionReady(string memory action, uint256 tokenId) external view returns (bool) {
+    Gotchi storage gotchi = gotchiStats[tokenId];
+    
+    if (keccak256(bytes(action)) == keccak256(bytes("play"))) {
+        return block.timestamp >= gotchi.lastPlayTime + cooldowns.play;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("feed"))) {
+        return block.timestamp >= gotchi.lastFeedTime + cooldowns.feed;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("sleep"))) {
+        return block.timestamp >= gotchi.lastSleepTime + cooldowns.sleep;
+    } else {
+        revert("Invalid action");
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+
+
+   // Helper function to set health and happiness for testing purposes
+function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint256 happiness) external onlyOwner {
+    gotchiStats[tokenId].health = health;
+    gotchiStats[tokenId].happiness = happiness;
+}
+
+// Helper function to directly update the leaderboard for testing
+function testUpdateLeaderboard(address player, uint256 score) external onlyOwner {
+    updateLeaderboard(topAllTimeHighRound, player, score, "AllTimeHighRound");
+}
+
+
 }
