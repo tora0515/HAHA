@@ -56,7 +56,7 @@ function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint25
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-describe("MamaGotchiGame Contract - Time and Cooldown Functionality", function () {
+describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", function () {
   let game, hahaToken, owner, addr1;
   const feedCost = ethers.parseUnits("10000", 18);
   const playCost = ethers.parseUnits("10000", 18);
@@ -67,10 +67,12 @@ describe("MamaGotchiGame Contract - Time and Cooldown Functionality", function (
     hahaToken = await HAHA.deploy();
     await hahaToken.waitForDeployment();
 
-    const MamaGotchiGame = await ethers.getContractFactory("MamaGotchiGame");
+    const MamaGotchiGameMinato = await ethers.getContractFactory(
+      "MamaGotchiGameMinato"
+    );
     [owner, addr1] = await ethers.getSigners();
 
-    game = await MamaGotchiGame.deploy(owner.address, hahaToken.target);
+    game = await MamaGotchiGameMinato.deploy(owner.address, hahaToken.target);
     await game.waitForDeployment();
 
     // Transfer tokens to addr1 and approve minting cost for minting
@@ -638,5 +640,73 @@ describe("MamaGotchiGame Contract - Time and Cooldown Functionality", function (
     await expect(
       game.isActionReady("invalidAction", tokenId)
     ).to.be.revertedWith("Invalid action");
+  });
+
+  it("Should not apply decay when waking up within MAX_SLEEP_DURATION", async function () {
+    const tokenId = 0;
+
+    // Put Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Advance time by 7 hours (less than MAX_SLEEP_DURATION)
+    await ethers.provider.send("evm_increaseTime", [7 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Wake the Gotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Retrieve Gotchi stats and confirm health and happiness remain unchanged
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.health).to.equal(80);
+    expect(gotchi.happiness).to.equal(80);
+  });
+
+  it("Should apply decay only for the duration beyond MAX_SLEEP_DURATION", async function () {
+    const tokenId = 0;
+
+    // Put Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Advance time by 9 hours (1 hour beyond MAX_SLEEP_DURATION)
+    await ethers.provider.send("evm_increaseTime", [9 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Wake the Gotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Calculate expected decay for 1 hour beyond MAX_SLEEP_DURATION
+    const expectedHealth = 80 - 5.5 * 1; // Decay rate is 5.5 per hour
+    const expectedHappiness = 80 - 4.16 * 1; // Decay rate is 4.16 per hour
+
+    // Retrieve Gotchi stats and check for correct decay
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.health).to.be.closeTo(Math.floor(expectedHealth), 1); // Use a margin due to rounding
+    expect(gotchi.happiness).to.be.closeTo(Math.floor(expectedHappiness), 1);
+  });
+
+  it("Should revert interaction if token transfer fails, keeping health and cooldowns unchanged", async function () {
+    const tokenId = 0;
+
+    // Approve the required allowance to pass the allowance check
+    await hahaToken
+      .connect(addr1)
+      .approve(game.target, ethers.parseUnits("10000", 18));
+
+    // Empty addr1's balance to simulate insufficient funds for the transfer
+    const addr1Balance = await hahaToken.balanceOf(addr1.address);
+    await hahaToken.connect(addr1).transfer(owner.address, addr1Balance);
+
+    // Capture initial health and lastFeedTime
+    const initialGotchi = await game.gotchiStats(tokenId);
+    const initialHealth = initialGotchi.health;
+    const initialLastFeedTime = initialGotchi.lastFeedTime;
+
+    // Attempt to feed, expecting it to revert due to transfer failure
+    await expect(game.connect(addr1).feed(tokenId)).to.be.reverted;
+
+    // Verify health and lastFeedTime remain unchanged
+    const gotchiAfterFailedFeed = await game.gotchiStats(tokenId);
+    expect(gotchiAfterFailedFeed.health).to.equal(initialHealth);
+    expect(gotchiAfterFailedFeed.lastFeedTime).to.equal(initialLastFeedTime);
   });
 });

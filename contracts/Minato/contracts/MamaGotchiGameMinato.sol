@@ -7,7 +7,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract MamaGotchiGame is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
+
+contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     uint256 private _nextTokenId;
 
     // Cooldown durations in seconds
