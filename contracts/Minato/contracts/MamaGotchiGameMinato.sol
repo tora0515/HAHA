@@ -133,8 +133,11 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
             Gotchi storage gotchi = gotchiStats[tokenIdToBurn];
             require(gotchi.health == 0 && gotchi.happiness == 0, "MamaGotchi still lives! Be a Good Kid and treat her well!");
             _burn(tokenIdToBurn);
-        }
-
+        } else {
+            // If tokenIdToBurn is zero, ensure this is the first mint for the user
+            require(balanceOf(msg.sender) == 0, "You already own a MamaGotchi! Burn it first to mint a new one.");
+    }
+        
         require(hahaToken.allowance(msg.sender, address(this)) >= mintCost, "Approval required for minting");
         require(hahaToken.transferFrom(msg.sender, address(this), mintCost), "Minting requires $HAHA tokens");
 
