@@ -6,6 +6,9 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+
 
 
 contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
@@ -139,10 +142,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
 
         // Separate the allowance check
         require(hahaToken.allowance(msg.sender, address(this)) >= mintCost, "Approval required for minting");
-
-        // Separate the token transfer for easier debugging and wallet compatibility
-        bool transferSuccess = hahaToken.transferFrom(msg.sender, address(this), mintCost);
-        require(transferSuccess, "Minting requires $HAHA tokens");
+        
+        // Burn the tokens directly from the user’s balance
+    ERC20Burnable(address(hahaToken)).burnFrom(msg.sender, mintCost);
 
         uint256 newTokenId = _nextTokenId++;
         _safeMint(to, newTokenId);
@@ -279,17 +281,21 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     // Check for death due to decay
     checkAndMarkDeath(tokenId);
 }   
-    /**
-    * @dev Verifies token allowance and transfers $HAHA tokens for a specified gameplay action.
-    * @param amount The amount of $HAHA tokens required.
-    * @param action Description of the action, used in revert messages.
-    */
-    function requireAndTransferTokens(uint256 amount, string memory action) internal {
-        require(hahaToken.allowance(msg.sender, address(this)) >= amount, 
-            string(abi.encodePacked("Approval required for ", action)));
-        require(hahaToken.transferFrom(msg.sender, address(this), amount), 
-            string(abi.encodePacked(action, " requires $HAHA tokens")));
-    }
+ /**
+* @dev Verifies token allowance and burns $HAHA tokens from the player's balance for a specified gameplay action.
+* @param amount The amount of $HAHA tokens required.
+* @param action Description of the action, used in revert messages.
+*/
+function requireAndBurnTokens(uint256 amount, string memory action) internal {
+    // Check if the sender has given allowance to the contract to burn tokens on their behalf
+    require(hahaToken.allowance(msg.sender, address(this)) >= amount, 
+        string(abi.encodePacked("Approval required for ", action)));
+    
+    // Burn tokens directly from the player's balance
+    ERC20Burnable(address(hahaToken)).burnFrom(msg.sender, amount);
+}
+
+
 
     /**
     * @dev Feeds MamaGotchi, increasing health if cooldown has elapsed.
@@ -313,7 +319,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     // Use helper for token transfer
-    requireAndTransferTokens(feedCost, "feeding");
+    requireAndBurnTokens(feedCost, "feeding");
 
     // Apply the feed boost to health
     gotchi.health = gotchi.health + 10 > 100 ? 100 : gotchi.health + 10;
@@ -344,7 +350,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     // Use helper for token transfer
-    requireAndTransferTokens(playCost, "playing");
+    requireAndBurnTokens(playCost, "playing");
 
     // Apply the play boost to happiness
     gotchi.happiness = gotchi.happiness + 10 > 100 ? 100 : gotchi.happiness + 10;

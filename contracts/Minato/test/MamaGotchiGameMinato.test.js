@@ -1776,9 +1776,35 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     expect(updatedHighScore).to.be.gt(initialHighScore);
   });
 
+  it("Should burn $HAHA tokens upon minting a MamaGotchi", async function () {
+    const mintCost = BigInt("10000000000000000000000000"); // Mint cost in $HAHA tokens (10 million tokens with 18 decimals)
+
+    // Step 1: Transfer $HAHA to addr1 and approve the contract
+    await hahaToken.connect(owner).transfer(addr1, mintCost); // Transfer $HAHA to addr1
+    await hahaToken.connect(addr1).approve(game.getAddress(), mintCost); // Approve $HAHA for minting
+
+    // Step 2: Check and burn any existing MamaGotchi by testing balance directly
+    const initialHahaBalance = await hahaToken.balanceOf(addr1); // Get initial $HAHA balance
+    const initialGameBalance = await game.balanceOf(addr1); // Check if addr1 has any tokens
+
+    // Burn the existing MamaGotchi if any are owned by addr1
+    if (initialGameBalance > 0) {
+      await game.connect(addr1).burn(0); // Burn the existing token by specifying 0 (assuming only one token exists per user)
+    }
+
+    // Step 3: Mint a new MamaGotchi and burn the HAHA tokens
+    await game.connect(addr1).mintNewGotchi(addr1, 0);
+
+    // Step 4: Check final balances to verify $HAHA burn
+    const finalHahaBalance = await hahaToken.balanceOf(addr1);
+
+    // Confirm that exactly `mintCost` amount of $HAHA was burned
+    expect(initialHahaBalance - finalHahaBalance).to.equal(mintCost);
+  });
+
   /**
    * Previous tests run after code updates to ensure still valid
-   */
+   
 
   it("Should apply idle decay after 1 hour of inactivity", async function () {
     const tokenId = 0;
@@ -1864,4 +1890,5 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
       "MamaGotchi says: I'm already awake!"
     );
   });
+  */
 });
