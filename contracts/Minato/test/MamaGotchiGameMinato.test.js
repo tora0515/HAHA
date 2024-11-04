@@ -51,6 +51,11 @@ function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint25
     gotchiStats[tokenId].health = health;
     gotchiStats[tokenId].happiness = happiness;
 }
+
+function testUpdateTimeAlive(uint256 tokenId) external {
+    updateTimeAlive(tokenId);
+}
+
  */
 
 const { expect } = require("chai");
@@ -1800,6 +1805,89 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
 
     // Confirm that exactly `mintCost` amount of $HAHA was burned
     expect(initialHahaBalance - finalHahaBalance).to.equal(mintCost);
+  });
+
+  it("Should cap health and happiness at 100 and floor at 0", async function () {
+    const tokenId = 0;
+
+    // Set health and happiness to maximum and attempt to feed or play to verify no overflow above 100
+    await game.setHealthAndHappinessForTesting(tokenId, 100, 100);
+    await game.connect(addr1).feed(tokenId);
+    await game.connect(addr1).play(tokenId);
+    let gotchi = await game.gotchiStats(tokenId);
+
+    // Verify that health and happiness do not exceed 100
+    expect(Number(gotchi.health)).to.equal(100);
+    expect(Number(gotchi.happiness)).to.equal(100);
+
+    // Set health and happiness to minimum and verify no underflow below 0 when decay occurs
+    await game.setHealthAndHappinessForTesting(tokenId, 0, 0);
+    await ethers.provider.send("evm_increaseTime", [3600]); // simulate 1-hour time decay
+    await game.testUpdateTimeAlive(tokenId); // Use the helper function
+    gotchi = await game.gotchiStats(tokenId);
+
+    // Verify that health and happiness do not go below 0
+    expect(Number(gotchi.health)).to.equal(0);
+    expect(Number(gotchi.happiness)).to.equal(0);
+  });
+
+  it("Should enforce cooldowns for feed, play, and sleep actions", async function () {
+    const tokenId = 0;
+
+    // Feed the Gotchi and check that it enforces the cooldown
+    await game.connect(addr1).feed(tokenId);
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm full!"
+    );
+
+    // Advance time by feed cooldown and attempt again
+    await ethers.provider.send("evm_increaseTime", [10 * 60]); // 10 minutes
+    await ethers.provider.send("evm_mine", []);
+    await expect(game.connect(addr1).feed(tokenId)).not.to.be.reverted;
+
+    // Play with the Gotchi and check that it enforces the cooldown
+    await game.connect(addr1).play(tokenId);
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm tired now!"
+    );
+
+    // Advance time by play cooldown and attempt again
+    await ethers.provider.send("evm_increaseTime", [15 * 60]); // 15 minutes
+    await ethers.provider.send("evm_mine", []);
+    await expect(game.connect(addr1).play(tokenId)).not.to.be.reverted;
+
+    // Put Gotchi to sleep and check that it enforces the cooldown
+    await game.connect(addr1).sleep(tokenId);
+
+    // Attempting to sleep again without waking should give "already in dreamland" message
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm already in dreamland, shhh!"
+    );
+
+    // Wake up the Gotchi to reset its state
+    await game.connect(addr1).wake(tokenId);
+
+    // Advance time by sleep cooldown and attempt sleep again
+    await ethers.provider.send("evm_increaseTime", [1 * 60 * 60]); // 1 hour
+    await ethers.provider.send("evm_mine", []);
+    await expect(game.connect(addr1).sleep(tokenId)).not.to.be.reverted;
+  });
+
+  it("Should revert if player tries to feed or play with MamaGotchi while it's asleep", async function () {
+    const tokenId = 0;
+
+    // Put the MamaGotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Attempt to feed while asleep and expect a revert
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi is asleep!"
+    );
+
+    // Attempt to play while asleep and expect a revert
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi is asleep!"
+    );
   });
 
   /**

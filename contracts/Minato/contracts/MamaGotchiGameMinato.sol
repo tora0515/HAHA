@@ -305,6 +305,7 @@ function requireAndBurnTokens(uint256 amount, string memory action) internal {
    function feed(uint256 tokenId) external nonReentrant {
     Gotchi storage gotchi = gotchiStats[tokenId];
     require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+    require(!gotchi.isSleeping, "MamaGotchi is asleep!"); // New check
     require(block.timestamp >= gotchi.lastFeedTime + cooldowns.feed, "MamaGotchi says: I'm full!");
 
     // Apply idle decay by updating timeAlive first
@@ -320,7 +321,6 @@ function requireAndBurnTokens(uint256 amount, string memory action) internal {
 
     // Use helper for token transfer
     requireAndBurnTokens(feedCost, "feeding");
-
     // Apply the feed boost to health
     gotchi.health = gotchi.health + 10 > 100 ? 100 : gotchi.health + 10;
     gotchi.lastFeedTime = block.timestamp;
@@ -336,6 +336,7 @@ function requireAndBurnTokens(uint256 amount, string memory action) internal {
     function play(uint256 tokenId) external nonReentrant {
     Gotchi storage gotchi = gotchiStats[tokenId];
     require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+    require(!gotchi.isSleeping, "MamaGotchi is asleep!"); // New check
     require(block.timestamp >= gotchi.lastPlayTime + cooldowns.play, "MamaGotchi says: I'm tired now!");
 
     // Apply idle decay by updating timeAlive first
@@ -497,8 +498,7 @@ function requireAndBurnTokens(uint256 amount, string memory action) internal {
 
 
 
-
-function getFeedCooldown() external view returns (uint256) {
+    function getFeedCooldown() external view returns (uint256) {
     return cooldowns.feed;
 }
 
@@ -549,5 +549,8 @@ function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint25
     gotchiStats[tokenId].happiness = happiness;
 }
 
+function testUpdateTimeAlive(uint256 tokenId) external {
+    updateTimeAlive(tokenId);
+}
 
 }
