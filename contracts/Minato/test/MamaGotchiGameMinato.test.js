@@ -1209,6 +1209,398 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
       expect(BigInt(gotchi.happiness)).to.equal(initialHappiness);
     }
   });
+
+  it("Should apply idle decay before boost when feeding after an idle period", async function () {
+    const tokenId = 0;
+
+    // Retrieve initial health and happiness values
+    let gotchi = await game.gotchiStats(tokenId);
+    const initialHealth = BigInt(gotchi.health);
+
+    // Fast forward time by 1 hour (3600 seconds)
+    await ethers.provider.send("evm_increaseTime", [3600]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Feed the Gotchi
+    await game.connect(addr1).feed(tokenId);
+
+    // Expected decay for 1 hour before feed boost
+    const expectedDecay = 5n; // Approximate 5.5 points/hour decay, rounded
+    const expectedHealthAfterDecayAndBoost =
+      initialHealth - expectedDecay + 10n; // -5 (decay) +10 (feed boost)
+
+    // Retrieve updated health after feeding
+    gotchi = await game.gotchiStats(tokenId);
+    expect(BigInt(gotchi.health)).to.equal(expectedHealthAfterDecayAndBoost);
+  });
+
+  it("Should not exceed maximum cap on health and happiness after feeding or playing", async function () {
+    const tokenId = 0;
+
+    // Set health and happiness near maximum (e.g., 95)
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 95, 95);
+
+    // Feed the Gotchi
+    await game.connect(addr1).feed(tokenId);
+
+    // Play with the Gotchi
+    await game.connect(addr1).play(tokenId);
+
+    // Retrieve updated health and happiness after interactions
+    const gotchi = await game.gotchiStats(tokenId);
+
+    // Assert that health and happiness do not exceed the maximum cap of 100
+    expect(BigInt(gotchi.health)).to.equal(100n);
+    expect(BigInt(gotchi.happiness)).to.equal(100n);
+  });
+
+  it("Should allow feeding right after the cooldown expires", async function () {
+    const tokenId = 0;
+
+    // Feed the Gotchi initially to start the cooldown
+    await game.connect(addr1).feed(tokenId);
+
+    // Retrieve the feed cooldown duration
+    const feedCooldown = await game.getFeedCooldown();
+
+    // Fast forward time by exactly the feed cooldown period
+    await ethers.provider.send("evm_increaseTime", [Number(feedCooldown)]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to feed again immediately after the cooldown
+    await expect(game.connect(addr1).feed(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should allow playing right after the cooldown expires", async function () {
+    const tokenId = 0;
+
+    // Play with the Gotchi initially to start the cooldown
+    await game.connect(addr1).play(tokenId);
+
+    // Retrieve the play cooldown duration
+    const playCooldown = await game.getPlayCooldown();
+
+    // Fast forward time by exactly the play cooldown period
+    await ethers.provider.send("evm_increaseTime", [Number(playCooldown)]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to play again immediately after the cooldown
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted;
+  });
+  it("Should cause Gotchi to die if idle decay reduces happiness to zero before play boost is applied", async function () {
+    const tokenId = 0;
+
+    // Set happiness near zero and health to a safe value, starting with happiness = 3
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 80, 3);
+
+    // Fast forward time by 1 hour (3600 seconds) to apply idle decay
+    await ethers.provider.send("evm_increaseTime", [3600]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to play with the Gotchi
+    await game.connect(addr1).play(tokenId);
+
+    // Retrieve Gotchi's updated stats
+    const gotchi = await game.gotchiStats(tokenId);
+    const deathTimestamp = gotchi.deathTimestamp;
+
+    // Check if Gotchi died as happiness should have reached zero
+    expect(BigInt(gotchi.happiness)).to.equal(0n); // Happiness should be zero
+    expect(deathTimestamp).to.be.gt(0); // Death timestamp should be set if Gotchi is dead
+  });
+
+  it("Should have independent cooldowns for feed and play actions", async function () {
+    const tokenId = 0;
+
+    // Call feed to start its cooldown
+    await game.connect(addr1).feed(tokenId);
+
+    // Attempt to play immediately after feeding (should succeed as cooldowns are independent)
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted;
+
+    // Retrieve feed cooldown duration
+    const feedCooldown = await game.getFeedCooldown();
+
+    // Fast forward only the feed cooldown period
+    await ethers.provider.send("evm_increaseTime", [Number(feedCooldown)]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to feed again (should succeed as feed cooldown has expired)
+    await expect(game.connect(addr1).feed(tokenId)).to.not.be.reverted;
+
+    // Play cooldown should still be active; fast-forward play cooldown now to test
+    const playCooldown = await game.getPlayCooldown();
+    await ethers.provider.send("evm_increaseTime", [Number(playCooldown)]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to play again after cooldown (should succeed as play cooldown has now expired)
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should accumulate idle decay correctly across multiple feed and play cycles", async function () {
+    const tokenId = 0;
+
+    // Initial feed action to start the interaction, setting health to 90
+    await game.connect(addr1).feed(tokenId);
+
+    // Fast forward time by 3 hours (10800 seconds) to accumulate decay
+    await ethers.provider.send("evm_increaseTime", [3 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Play with the Gotchi, which should apply 3 hours of idle decay first, then add 10 to happiness
+    await game.connect(addr1).play(tokenId);
+
+    // Expected decay for 3 hours
+    const healthDecayForThreeHours = 16; // Approximate 5.5 points/hour * 3 hours, rounded down to 16
+    const happinessDecayForThreeHours = 12; // Approximate 4.16 points/hour * 3 hours, rounded down to 12
+
+    // Initial health is 90 after feeding, initial happiness is 80
+    const initialHealth = 90;
+    const initialHappiness = 80;
+
+    // Apply decay, then account for the 10-point boost from `play`
+    const expectedHealth = initialHealth - healthDecayForThreeHours; // Health after decay
+    const expectedHappiness =
+      initialHappiness - happinessDecayForThreeHours + 10; // Happiness after decay + play boost
+
+    // Retrieve updated health and happiness after playing, converting values to numbers
+    const gotchi = await game.gotchiStats(tokenId);
+    const currentHealth = Number(gotchi.health);
+    const currentHappiness = Number(gotchi.happiness);
+
+    // Assert the health and happiness values reflect the accumulated decay before boost
+    expect(currentHealth).to.equal(expectedHealth);
+    expect(currentHappiness).to.equal(expectedHappiness);
+  });
+
+  it("Should enforce cooldown boundaries accurately for feed and play actions", async function () {
+    const tokenId = 0;
+
+    // Step 1: Call feed to start the cooldown
+    await game.connect(addr1).feed(tokenId);
+
+    // Retrieve the feed cooldown duration
+    const feedCooldown = await game.getFeedCooldown();
+
+    // Step 2: Fast forward to just before the cooldown expires
+    await ethers.provider.send("evm_increaseTime", [Number(feedCooldown) - 2]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to feed again; this should revert due to active cooldown
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm full!"
+    );
+
+    // Step 3: Fast forward to exactly when the cooldown expires
+    await ethers.provider.send("evm_increaseTime", [2]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to feed again; this should now succeed as cooldown has expired
+    await expect(game.connect(addr1).feed(tokenId)).to.not.be.reverted;
+
+    // Repeat the same steps for the play cooldown
+
+    // Call play to start the cooldown
+    await game.connect(addr1).play(tokenId);
+
+    // Retrieve the play cooldown duration
+    const playCooldown = await game.getPlayCooldown();
+
+    // Fast forward to just before the cooldown expires
+    await ethers.provider.send("evm_increaseTime", [Number(playCooldown) - 2]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to play again; this should revert due to active cooldown
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm tired now!"
+    );
+
+    // Fast forward to exactly when the cooldown expires
+    await ethers.provider.send("evm_increaseTime", [2]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to play again; this should now succeed as cooldown has expired
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should apply decay only for the time beyond the 8-hour sleep cap upon waking", async function () {
+    const tokenId = 0;
+
+    // Put Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Fast forward time by 9 hours (1 hour beyond the MAX_SLEEP_DURATION of 8 hours)
+    await ethers.provider.send("evm_increaseTime", [9 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Wake up the Gotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Calculate expected decay for the 1 hour beyond the 8-hour cap
+    const healthDecayForOneHour = 5; // 5.5 points/hour, rounded down to 5
+    const happinessDecayForOneHour = 4; // 4.16 points/hour, rounded down to 4
+
+    // Initial health and happiness are 80 each
+    const initialHealth = 80;
+    const initialHappiness = 80;
+
+    // Apply decay only for the hour beyond the MAX_SLEEP_DURATION
+    const expectedHealth = initialHealth - healthDecayForOneHour;
+    const expectedHappiness = initialHappiness - happinessDecayForOneHour;
+
+    // Retrieve updated health and happiness after waking
+    const gotchi = await game.gotchiStats(tokenId);
+    const currentHealth = Number(gotchi.health);
+    const currentHappiness = Number(gotchi.happiness);
+
+    // Assert health and happiness values match the expected decay from oversleeping
+    expect(currentHealth).to.equal(expectedHealth);
+    expect(currentHappiness).to.equal(expectedHappiness);
+  });
+
+  it("Should cause Gotchi to die if oversleep decay reduces health or happiness to zero upon waking", async function () {
+    const tokenId = 0;
+
+    // Set health and happiness to low values to simulate near-death state
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 5, 4);
+
+    // Put Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Fast forward time by 9 hours (1 hour beyond MAX_SLEEP_DURATION to trigger decay)
+    await ethers.provider.send("evm_increaseTime", [9 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Wake up the Gotchi; decay should apply for 1 hour beyond the 8-hour sleep cap
+    await game.connect(addr1).wake(tokenId);
+
+    // Retrieve Gotchi stats and check death status
+    const gotchi = await game.gotchiStats(tokenId);
+    const deathTimestamp = gotchi.deathTimestamp;
+
+    // Check if Gotchi died due to low health/happiness after decay
+    expect(BigInt(gotchi.health)).to.equal(0n); // Health should be zero if decay killed Gotchi
+    expect(deathTimestamp).to.be.gt(0); // Death timestamp should be set if Gotchi is dead
+  });
+
+  it("Should enforce sleep cooldown after waking up from sleep", async function () {
+    const tokenId = 0; // Assuming we are using an already owned Gotchi with ID 0
+
+    // Put Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Fast forward time by 4 hours (14400 seconds)
+    await ethers.provider.send("evm_increaseTime", [4 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Wake the Gotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Attempt to put Gotchi back to sleep immediately, expecting it to revert due to 1-hour cooldown
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm not sleepy!"
+    );
+  });
+
+  it("Should prevent sleep during partial cooldown and allow it after full cooldown", async function () {
+    const tokenId = 0; // Using the existing Gotchi
+
+    // Put Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Fast forward time by 4 hours (14400 seconds)
+    await ethers.provider.send("evm_increaseTime", [4 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Wake the Gotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Partial cooldown period: fast-forward 30 minutes (1800 seconds)
+    await ethers.provider.send("evm_increaseTime", [30 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Attempt to put Gotchi back to sleep; should fail due to cooldown not being complete
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm not sleepy!"
+    );
+
+    // Fast forward the rest of the cooldown period (30 more minutes to reach 1 hour total)
+    await ethers.provider.send("evm_increaseTime", [30 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Now the cooldown has completed, so we should be able to put the Gotchi back to sleep
+    await expect(game.connect(addr1).sleep(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should allow sleep after waking up and waiting for the full cooldown", async function () {
+    const tokenId = 0; // Using the existing Gotchi
+
+    // Put Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Fast forward time by 4 hours (14400 seconds)
+    await ethers.provider.send("evm_increaseTime", [4 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Wake the Gotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Fast forward 1 hour (3600 seconds) for the full cooldown
+    await ethers.provider.send("evm_increaseTime", [1 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Now attempt to put Gotchi back to sleep; it should succeed since cooldown has completed
+    await expect(game.connect(addr1).sleep(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should enforce cooldown accurately across multiple sleep-wake cycles", async function () {
+    const tokenId = 0; // Using the existing Gotchi
+
+    // First sleep-wake cycle
+
+    // Put Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Fast forward time by 4 hours
+    await ethers.provider.send("evm_increaseTime", [4 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Wake the Gotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Attempt to sleep immediately after waking; should fail due to cooldown
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm not sleepy!"
+    );
+
+    // Fast forward 1 hour to complete the cooldown
+    await ethers.provider.send("evm_increaseTime", [1 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Put Gotchi back to sleep; should succeed as cooldown has completed
+    await expect(game.connect(addr1).sleep(tokenId)).to.not.be.reverted;
+
+    // Second sleep-wake cycle (repeat to ensure cooldown resets)
+
+    // Fast forward time by 4 hours again
+    await ethers.provider.send("evm_increaseTime", [4 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Wake the Gotchi again
+    await game.connect(addr1).wake(tokenId);
+
+    // Attempt to sleep immediately again; should fail due to cooldown
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm not sleepy!"
+    );
+
+    // Fast forward another hour to complete the cooldown
+    await ethers.provider.send("evm_increaseTime", [1 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Gotchi should be able to sleep again now
+    await expect(game.connect(addr1).sleep(tokenId)).to.not.be.reverted;
+  });
 });
 
 /**
