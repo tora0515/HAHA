@@ -103,7 +103,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     */
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         require(ownerOf(tokenId) != address(0), "ERC721Metadata: URI query for nonexistent token");
-        return "https://gateway.pinata.cloud/ipfs/QmbevZWuFi1CyzocTh5H7ouEwfYGTEe7FVAmcVX95mzmvA";
+        return "https://gateway.pinata.cloud/ipfs/QmRCaEGi3FB7fWB9KCmtfV8i6RvNRqZXGY7F1KF4jkdTrm";
     }
 
     /**

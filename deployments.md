@@ -6,11 +6,11 @@ This document records details of each deployment for HAHA Token and MamaGotchiGa
 
 ## Minato Testnet Deployment - HAHA Token
 
-**Date of Deployment**: October 27, 2023  
+**Date of Deployment**: November 5, 2024
 **Network**: Minato Testnet  
-**Token Address**: 0xDD735ad642e188d595E17236628e5d4aFA2DBab7  
+**Token Address**: 0x38611615d7A357B8C88523bd02d85375fAF1E8D1  
 **Deployer Address**: 0x1adAF26F6440ab7D7a237b49e1ceEf58f45F902a  
-**Explorer Link**: [View on Minato Explorer](https://soneium-minato.blockscout.com/token/0xDD735ad642e188d595E17236628e5d4aFA2DBab7)  
+**Explorer Link**: [View on Minato Explorer](https://soneium-minato.blockscout.com/token/0x38611615d7A357B8C88523bd02d85375fAF1E8D1?tab=contract)  
 **Initial Supply**: 100 trillion HAHA tokens  
 **Gas Used**: Transaction gas used (retrieved from the transaction receipt)
 
@@ -26,10 +26,10 @@ This document records details of each deployment for HAHA Token and MamaGotchiGa
 
 **Date of Deployment**: November 4, 2024  
 **Network**: Minato Testnet  
-**Contract Address**: 0x422dE3D472217F37aa7AA7e26534e44E498E5bF8  
-**HAHA Token Address**: 0xDD735ad642e188d595E17236628e5d4aFA2DBab7  
+**Contract Address**: 0xAa58689f1934b50c0eF75E33912B762CdF8d9433  
+**HAHA Token Address**: 0x38611615d7A357B8C88523bd02d85375fAF1E8D1  
 **Deployer Address**: 0x1adAF26F6440ab7D7a237b49e1ceEf58f45F902a  
-**Explorer Link**: [View on Minato Explorer](https://explorer-testnet.soneium.org/address/0x422dE3D472217F37aa7AA7e26534e44E498E5bF8?tab=contract)
+**Explorer Link**: [View on Minato Explorer](https://explorer-testnet.soneium.org/address/0xAa58689f1934b50c0eF75E33912B762CdF8d9433tab=contract)
 
 **Initial Configuration**:
 
