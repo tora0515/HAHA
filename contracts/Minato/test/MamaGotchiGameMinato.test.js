@@ -1601,12 +1601,184 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     // Gotchi should be able to sleep again now
     await expect(game.connect(addr1).sleep(tokenId)).to.not.be.reverted;
   });
-});
 
-/**
-  ////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////
-  ///////////////////////////////////////////////////////////
+  it("Should record exact timeAlive if Gotchi dies during idle period", async function () {
+    const tokenId = 0;
+
+    // Set Gotchi's health low to simulate near-death
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 1, 1);
+
+    // Fast forward 1 hour to apply fatal decay
+    await ethers.provider.send("evm_increaseTime", [3600]); // 1 hour
+    await ethers.provider.send("evm_mine", []);
+
+    // Interact to trigger timeAlive update and death check
+    await game.connect(addr1).feed(tokenId);
+
+    // Retrieve the final timeAlive and deathTimestamp
+    const gotchi = await game.gotchiStats(tokenId);
+
+    // Expected timeAlive should be approximately 1 hour (3600 seconds)
+    const expectedTimeAlive = 3600;
+    const tolerance = 2; // Allowable difference in seconds
+
+    expect(Number(gotchi.timeAlive)).to.be.within(
+      expectedTimeAlive - tolerance,
+      expectedTimeAlive + tolerance
+    );
+    expect(gotchi.deathTimestamp).to.be.gt(0); // Death timestamp should be set
+  });
+
+  it("Should record exact timeAlive if Gotchi dies from idle decay immediately after minting", async function () {
+    const tokenId = 0;
+
+    // Check initial Gotchi state
+    let gotchi = await game.gotchiStats(tokenId);
+    expect(Number(gotchi.timeAlive)).to.equal(0);
+
+    // Fast forward time to when health would decay to zero
+    const timeToDeathDueToDecay = Math.floor((80 / 5.5) * 3600); // Decay to zero from health = 80
+    await ethers.provider.send("evm_increaseTime", [timeToDeathDueToDecay]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Trigger updateTimeAlive by calling feed, then manually check Gotchi's state
+    await game.connect(addr1).feed(tokenId);
+
+    // Refresh the Gotchi data
+    gotchi = await game.gotchiStats(tokenId);
+
+    // Verify timeAlive and that death has been recorded correctly
+    const tolerance = 2;
+    expect(Number(gotchi.timeAlive)).to.be.within(
+      timeToDeathDueToDecay - tolerance,
+      timeToDeathDueToDecay + tolerance
+    );
+    expect(gotchi.health).to.equal(0);
+    expect(gotchi.deathTimestamp).to.be.gt(0); // Confirm death is recorded
+  });
+  it("Should record exact timeAlive if Gotchi dies from oversleeping", async function () {
+    const tokenId = 0;
+
+    // Mint a new Gotchi and put it to sleep immediately
+    await game.connect(addr1).sleep(tokenId);
+
+    // Fast-forward time by 8 hours + 1 day (oversleep period)
+    const oversleepDuration = 8 * 3600 + 24 * 3600;
+    await ethers.provider.send("evm_increaseTime", [oversleepDuration]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Listen for debug events when waking the Gotchi
+    const tx = await game.connect(addr1).wake(tokenId);
+    const receipt = await tx.wait();
+
+    // Check if events are present before iterating
+    if (receipt.events) {
+      receipt.events.forEach((event) => {
+        if (event.event === "DebugSleepDuration") {
+          console.log("DebugSleepDuration:", event.args[1].toString());
+        }
+        if (event.event === "DebugDecayDuration") {
+          console.log("DebugDecayDuration:", event.args[1].toString());
+        }
+        if (event.event === "DebugTimeAlive") {
+          console.log("DebugTimeAlive:", event.args[1].toString());
+        }
+      });
+    } else {
+      console.log(
+        "No events found in the receipt. Ensure Debug events are emitted correctly."
+      );
+    }
+
+    // Expected timeAlive should include 8 hours + oversleep duration (24 hours)
+    const expectedTimeAlive = 8 * 3600 + 24 * 3600;
+    const tolerance = 5;
+
+    // Re-fetch Gotchi stats
+    const gotchi = await game.gotchiStats(tokenId);
+
+    // Validate that timeAlive matches expectation within tolerance
+    expect(Number(gotchi.timeAlive)).to.be.within(
+      expectedTimeAlive - tolerance,
+      expectedTimeAlive + tolerance
+    );
+
+    expect(gotchi.deathTimestamp).to.be.gt(0); // Confirm Gotchi has a death timestamp
+  });
+
+  it("Should accurately track timeAlive with frequent interactions", async function () {
+    const tokenId = 0;
+
+    // Initial values check for timeAlive and status
+    let gotchi = await game.gotchiStats(tokenId);
+    expect(Number(gotchi.timeAlive)).to.equal(0);
+
+    // Define interaction intervals and total period for tracking
+    const interactionInterval = 15 * 60; // 15 minutes (in seconds)
+    const totalPeriod = 3 * 3600; // 3 hours total duration for this test
+    let elapsedTime = 0;
+
+    // Interact multiple times within the 3-hour period without allowing idle decay
+    while (elapsedTime < totalPeriod) {
+      // Play with Gotchi
+      await ethers.provider.send("evm_increaseTime", [interactionInterval]);
+      await ethers.provider.send("evm_mine", []);
+      await game.connect(addr1).play(tokenId);
+      elapsedTime += interactionInterval;
+
+      // Feed Gotchi
+      await ethers.provider.send("evm_increaseTime", [interactionInterval]);
+      await ethers.provider.send("evm_mine", []);
+      await game.connect(addr1).feed(tokenId);
+      elapsedTime += interactionInterval;
+    }
+
+    // Re-fetch Gotchi stats after interactions
+    gotchi = await game.gotchiStats(tokenId);
+
+    // Set an expected timeAlive range with tolerance
+    const expectedTimeAlive = totalPeriod;
+    const tolerance = 25; // Allow for a minor tolerance
+
+    // Assert that timeAlive is within the expected range
+    expect(Number(gotchi.timeAlive)).to.be.within(
+      expectedTimeAlive - tolerance,
+      expectedTimeAlive + tolerance
+    );
+
+    // Ensure Gotchi remains alive with health and happiness intact
+    expect(await game.isAlive(tokenId)).to.be.true;
+  });
+
+  it("Should only update leaderboard with highest timeAlive when manually saved", async function () {
+    const tokenId = 0;
+
+    // Perform a few interactions to accumulate some timeAlive
+    await game.connect(addr1).play(tokenId);
+    await ethers.provider.send("evm_increaseTime", [5 * 60]);
+    await ethers.provider.send("evm_mine", []);
+    await game.connect(addr1).feed(tokenId);
+
+    // Manually save the current timeAlive
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    let initialHighScore = await game.playerHighScores(addr1.address);
+
+    // Fast forward and interact more to increase timeAlive
+    await ethers.provider.send("evm_increaseTime", [10 * 60]);
+    await ethers.provider.send("evm_mine", []);
+    await game.connect(addr1).play(tokenId);
+
+    // Save again; high score should update if timeAlive has increased
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    const updatedHighScore = await game.playerHighScores(addr1.address);
+
+    // Validate that the high score only updates when the timeAlive is higher
+    expect(updatedHighScore).to.be.gt(initialHighScore);
+  });
+
+  /**
+   * Previous tests run after code updates to ensure still valid
+   */
 
   it("Should apply idle decay after 1 hour of inactivity", async function () {
     const tokenId = 0;
@@ -1693,4 +1865,3 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     );
   });
 });
-*/
