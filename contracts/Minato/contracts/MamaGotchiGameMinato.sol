@@ -366,6 +366,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         Gotchi storage gotchi = gotchiStats[tokenId];
 
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+        require(isAlive(tokenId), "MamaGotchi is dead!");
         require(!gotchi.isSleeping, "MamaGotchi says: I'm already in dreamland, shhh!");
         require(block.timestamp >= gotchi.lastSleepTime + cooldowns.sleep, "MamaGotchi says: I'm not sleepy!");
 
@@ -516,4 +517,69 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         // Calculate decay based on the duration and happiness decay rate
         return (duration * HAPPINESS_DECAY_RATE) / (3600 * 100); // Converts to 4.16 points per hour
     }
+
+
+
+
+
+
+
+
+
+
+
+    function getFeedCooldown() external view returns (uint256) {
+    return cooldowns.feed;
+}
+
+function getPlayCooldown() external view returns (uint256) {
+    return cooldowns.play;
+}
+
+function getSleepCooldown() external view returns (uint256) {
+    return cooldowns.sleep;
+}
+
+function getCooldownTime(string memory action) external view returns (uint256) {
+    if (keccak256(bytes(action)) == keccak256(bytes("play"))) {
+        return cooldowns.play;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("feed"))) {
+        return cooldowns.feed;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("sleep"))) {
+        return cooldowns.sleep;
+    } else {
+        revert("Invalid action");
+    }
+}
+
+function isActionReady(string memory action, uint256 tokenId) external view returns (bool) {
+    Gotchi storage gotchi = gotchiStats[tokenId];
+    
+    if (keccak256(bytes(action)) == keccak256(bytes("play"))) {
+        return block.timestamp >= gotchi.lastPlayTime + cooldowns.play;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("feed"))) {
+        return block.timestamp >= gotchi.lastFeedTime + cooldowns.feed;
+    } else if (keccak256(bytes(action)) == keccak256(bytes("sleep"))) {
+        return block.timestamp >= gotchi.lastSleepTime + cooldowns.sleep;
+    } else {
+        revert("Invalid action");
+    }
+}
+
+function isTokenOwner(uint256 tokenId, address expectedOwner) external view returns (bool) {
+    return ownerOf(tokenId) == expectedOwner;
+}
+
+function testCheckAndMarkDeath(uint256 tokenId) external {
+    checkAndMarkDeath(tokenId);
+}
+
+function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint256 happiness) external onlyOwner {
+    gotchiStats[tokenId].health = health;
+    gotchiStats[tokenId].happiness = happiness;
+}
+
+function testUpdateTimeAlive(uint256 tokenId) external {
+    updateTimeAlive(tokenId);
+}
 }

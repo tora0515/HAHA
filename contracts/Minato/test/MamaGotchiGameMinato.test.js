@@ -1922,6 +1922,20 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     expect(gotchi.health).to.equal(0);
     expect(gotchi.deathTimestamp).to.be.gt(0); // Confirm death is recorded
   });
+  it("Should prevent sleep action if Gotchi is dead", async function () {
+    const tokenId = 0;
+
+    // Set health and happiness to zero to simulate death
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 0, 0);
+
+    // Verify the Gotchi is dead by checking isAlive
+    expect(await game.isAlive(tokenId)).to.be.false;
+
+    // Attempt to put the dead Gotchi to sleep, expecting it to revert
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi is dead!"
+    );
+  });
 
   /**
    * Previous tests run after code updates to ensure still valid
