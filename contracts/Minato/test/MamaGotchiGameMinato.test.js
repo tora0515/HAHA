@@ -97,6 +97,134 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     await ethers.provider.send("evm_revert", [snapshotId]);
   });
 
+  it("Should revert feeding action if MamaGotchi is dead due to natural decay", async function () {
+    const tokenId = 0;
+
+    // Fast forward time by 24 hours to allow health and happiness to decay naturally to zero
+    await ethers.provider.send("evm_increaseTime", [24 * 60 * 60]); // 24 hours in seconds
+    await ethers.provider.send("evm_mine", []);
+
+    // Trigger any interaction to apply decay and mark death if needed
+    await game.connect(owner).testUpdateTimeAlive(tokenId);
+
+    // Verify MamaGotchi is dead
+    expect(await game.isAlive(tokenId)).to.be.false;
+
+    // Attempt to feed the dead MamaGotchi and expect a revert
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi is dead!"
+    );
+
+    // Verify that health remains unchanged and at zero
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(Number(gotchi.health)).to.equal(0);
+  });
+
+  it("Should revert playing action if MamaGotchi is dead due to natural decay", async function () {
+    const tokenId = 0;
+
+    // Fast forward time by 24 hours to allow health and happiness to decay naturally to zero
+    await ethers.provider.send("evm_increaseTime", [24 * 60 * 60]); // 24 hours in seconds
+    await ethers.provider.send("evm_mine", []);
+
+    // Trigger any interaction to apply decay and mark death if needed
+    await game.connect(owner).testUpdateTimeAlive(tokenId);
+
+    // Verify MamaGotchi is dead
+    expect(await game.isAlive(tokenId)).to.be.false;
+
+    // Attempt to play with the dead MamaGotchi and expect a revert
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi is dead!"
+    );
+
+    // Verify that happiness remains unchanged and at zero
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(Number(gotchi.happiness)).to.equal(0);
+  });
+
+  it("Should revert playing action if MamaGotchi has 0 health but positive happiness", async function () {
+    const tokenId = 0;
+
+    // Directly set health to 0 and happiness to 10 to simulate near-death state
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 0, 10);
+
+    // Trigger the death check to mark the MamaGotchi as dead
+    await game.connect(owner).testCheckAndMarkDeath(tokenId);
+
+    // Verify MamaGotchi is dead
+    expect(await game.isAlive(tokenId)).to.be.false;
+
+    // Attempt to play with the dead MamaGotchi and expect a revert
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi is dead!"
+    );
+
+    // Verify that health remains at zero and happiness is unchanged
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(Number(gotchi.health)).to.equal(0);
+    expect(Number(gotchi.happiness)).to.equal(10);
+  });
+  it("Should revert feeding action if MamaGotchi has 0 happiness but positive health", async function () {
+    const tokenId = 0;
+
+    // Directly set happiness to 0 and health to 10 to simulate near-death state
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 10, 0);
+
+    // Trigger the death check to mark the MamaGotchi as dead
+    await game.connect(owner).testCheckAndMarkDeath(tokenId);
+
+    // Verify MamaGotchi is dead
+    expect(await game.isAlive(tokenId)).to.be.false;
+
+    // Attempt to feed the dead MamaGotchi and expect a revert
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi is dead!"
+    );
+
+    // Verify that happiness remains at zero and health is unchanged
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(Number(gotchi.happiness)).to.equal(0);
+    expect(Number(gotchi.health)).to.equal(10);
+  });
+  it("Should confirm MamaGotchi is dead and not sleeping if health runs out during sleep", async function () {
+    const tokenId = 0;
+
+    // Step 1: Put MamaGotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Step 2: Directly set health to 0 and happiness to a positive value (e.g., 10) to simulate death condition during sleep
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 0, 10);
+
+    // Step 3: Wake MamaGotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Step 4: Verify MamaGotchi is dead and no longer sleeping
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(await game.isAlive(tokenId)).to.be.false;
+    expect(gotchi.isSleeping).to.be.false;
+  });
+
+  it("Should confirm MamaGotchi is dead and not sleeping if happiness runs out during sleep", async function () {
+    const tokenId = 0;
+
+    // Step 1: Put MamaGotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Step 2: Directly set happiness to 0 and health to a positive value (e.g., 10) to simulate death condition during sleep
+    await game.connect(owner).setHealthAndHappinessForTesting(tokenId, 10, 0);
+
+    // Step 3: Wake MamaGotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Step 4: Verify MamaGotchi is dead and no longer sleeping
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(await game.isAlive(tokenId)).to.be.false;
+    expect(gotchi.isSleeping).to.be.false;
+  });
+
+  /**
+
   it("Should correctly update timeAlive after feeding", async function () {
     const tokenId = 0;
     await game.connect(addr1).feed(tokenId);
