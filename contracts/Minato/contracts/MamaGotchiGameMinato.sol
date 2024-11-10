@@ -12,7 +12,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 
 
 contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
-    uint256 private _nextTokenId;
+    uint256 private _nextTokenId = 1;
 
     // Cooldown durations in seconds
     struct GotchiCooldowns {
@@ -35,9 +35,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     uint256 public feedHealthBoost = 10; // Adjustable feed boost for health
     uint256 public constant MAX_HAPPINESS = 100; // 100 points max happiness
     uint256 public playHappinessBoost = 10; // Adjustable play boost for happiness
-
-
-
+    
     // Adjustable costs in $HAHA tokens
     uint256 public mintCost;
     uint256 public feedCost;
@@ -137,37 +135,49 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     * @param tokenIdToBurn Optional: ID of the MamaGotchi to burn (0 if no token is burned).
     */
     function mintNewGotchi(address to, uint256 tokenIdToBurn) external nonReentrant {
-        if (tokenIdToBurn != 0) {
-            require(ownerOf(tokenIdToBurn) == msg.sender, "Not your MamaGotchi");
-            Gotchi storage gotchi = gotchiStats[tokenIdToBurn];
-            require(gotchi.health == 0 && gotchi.happiness == 0, "MamaGotchi still lives! Be a Good Kid and treat her well!");
-            _burn(tokenIdToBurn);
-        } else {
-            require(balanceOf(msg.sender) == 0, "You already own a MamaGotchi! Burn it first to mint a new one.");
-        }
+    // Check if the player owns a Gotchi
+    if (balanceOf(msg.sender) > 0) {
+         require(tokenIdToBurn != 0, "You already own a MamaGotchi! Burn it first to mint a new one.");
+        // Verify ownership of the specified Gotchi and update its time alive
+        require(ownerOf(tokenIdToBurn) == msg.sender, "Not your MamaGotchi");
 
-        require(hahaToken.allowance(msg.sender, address(this)) >= mintCost, "Approval required for minting");
-        
-        // Burn the tokens directly from the user’s balance
-        ERC20Burnable(address(hahaToken)).burnFrom(msg.sender, mintCost);
+        // Update time alive to ensure the Gotchi’s status is current
+        updateTimeAlive(tokenIdToBurn);
+        // Check if the Gotchi is dead before allowing the burn
+        require(!isAlive(tokenIdToBurn), "MamaGotchi still lives! Be a Good Kid and treat her well!");
 
-        uint256 newTokenId = _nextTokenId++;
-        _safeMint(to, newTokenId);
-        gotchiStats[newTokenId] = Gotchi(
-            80,       // health
-            80,       // happiness
-            0,        // deathTimestamp
-            false,    // isSleeping
-            0,        // sleepStartTime
-            0,        // lastFeedTime
-            0,        // lastPlayTime
-            0,        // lastSleepTime
-            block.timestamp, // lastInteraction, start tracking time alive
-            0         // timeAlive starts at 0
-        );
-
-        emit GotchiMinted(to, newTokenId);
+        // Burn the Gotchi if dead
+        _burn(tokenIdToBurn);
     }
+
+    require(tokenIdToBurn != 0, "You already own a MamaGotchi! Burn it first to mint a new one.");
+
+    // Ensure the player has sufficient $HAHA tokens and has approved the mint cost
+    require(hahaToken.balanceOf(msg.sender) >= mintCost, "Insufficient $HAHA balance for minting");
+    require(hahaToken.allowance(msg.sender, address(this)) >= mintCost, "Approval required for minting");
+
+    // Burn the required $HAHA tokens from the player's balance
+    ERC20Burnable(address(hahaToken)).burnFrom(msg.sender, mintCost);
+
+    // Mint a new Gotchi for the player with initial stats
+    uint256 newTokenId = _nextTokenId++;
+    _safeMint(to, newTokenId);
+    gotchiStats[newTokenId] = Gotchi(
+        80,       // health
+        80,       // happiness
+        0,        // deathTimestamp
+        false,    // isSleeping
+        0,        // sleepStartTime
+        0,        // lastFeedTime
+        0,        // lastPlayTime
+        0,        // lastSleepTime
+        block.timestamp, // lastInteraction
+        0         // timeAlive
+    );
+
+    emit GotchiMinted(to, newTokenId);
+}
+
 
      /**
     * @dev Checks if a MamaGotchi's health or happiness has reached zero and sets its `deathTimestamp`.
@@ -229,79 +239,80 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Updates the `timeAlive` counter and resets `lastInteraction` for a MamaGotchi.
-    * Tracks survival time for scoring purposes.
+    * @dev Updates the `timeAlive` counter and applies health and happiness decay for a MamaGotchi.
+    * Decay is based on the duration since the last interaction or sleep start. Adjusts health and
+    * happiness accordingly, and if either reaches zero, the Gotchi is marked as dead.
+    * If the Gotchi is sleeping, this method applies decay after the maximum sleep duration.
     * @param tokenId The ID of the MamaGotchi.
     */
- function updateTimeAlive(uint256 tokenId) internal {
-    Gotchi storage gotchi = gotchiStats[tokenId];
+    function updateTimeAlive(uint256 tokenId) internal {
+        Gotchi storage gotchi = gotchiStats[tokenId];
 
-    // Exit early if Gotchi is already dead
-    if (gotchi.deathTimestamp != 0) {
-        return;
-    }
+        // Exit early if Gotchi is already dead
+        if (gotchi.deathTimestamp != 0) {
+            return;
+        }
 
-     // Pre-check: if health or happiness is already zero, skip further calculations
-    if (gotchi.health == 0 || gotchi.happiness == 0) {
-        // Set death timestamp if Gotchi has no health or happiness left
-        gotchi.deathTimestamp = block.timestamp;
-        emit GotchiDied(ownerOf(tokenId), tokenId);
-        return;
-    }
-
-    uint256 decayHealth = 0;
-    uint256 decayHappiness = 0;
-
-    if (gotchi.isSleeping) {
-        // Add MAX_SLEEP_DURATION to timeAlive, as no decay occurs during this time
-        gotchi.timeAlive += MAX_SLEEP_DURATION;
-        
-        // Calculate the additional time after max sleep (if Gotchi stayed idle)
-        uint256 decayDuration = (block.timestamp - gotchi.sleepStartTime) - MAX_SLEEP_DURATION;
-
-        // Apply decay based on this post-sleep duration
-        decayHealth = calculateHealthDecay(decayDuration);
-        decayHappiness = calculateHappinessDecay(decayDuration);
-
-        // Adjust health and happiness, then determine if Gotchi died during this time
-        gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
-        gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
-
-        // If death occurs during the decay duration, adjust timeAlive up to death point
+        // Pre-check: if health or happiness is already zero, skip further calculations
         if (gotchi.health == 0 || gotchi.happiness == 0) {
-            uint256 timeUntilDeath = calculateTimeUntilDeath(tokenId);
-            gotchi.timeAlive += timeUntilDeath;
-            gotchi.deathTimestamp = block.timestamp - (decayDuration - timeUntilDeath);
+            // Set death timestamp if Gotchi has no health or happiness left
+            gotchi.deathTimestamp = block.timestamp;
             emit GotchiDied(ownerOf(tokenId), tokenId);
             return;
         }
 
-        // If Gotchi is still alive after decay, add full decayDuration to timeAlive
-        gotchi.timeAlive += decayDuration;
-        gotchi.lastInteraction = block.timestamp;
-        emit DecayCalculated(decayHealth, decayHappiness);
-    } else {
-        // Regular decay handling
-        uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
-        decayHealth = calculateHealthDecay(elapsedTime);
-        decayHappiness = calculateHappinessDecay(elapsedTime);
+        uint256 decayHealth = 0;
+        uint256 decayHappiness = 0;
 
-        gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
-        gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
+        if (gotchi.isSleeping) {
+            // Add MAX_SLEEP_DURATION to timeAlive, as no decay occurs during this time
+            gotchi.timeAlive += MAX_SLEEP_DURATION;
+            
+            // Calculate the additional time after max sleep (if Gotchi stayed idle)
+            uint256 decayDuration = (block.timestamp - gotchi.sleepStartTime) - MAX_SLEEP_DURATION;
 
-        if (gotchi.health == 0 || gotchi.happiness == 0) {
-            uint256 timeUntilDeath = calculateTimeUntilDeath(tokenId);
-            gotchi.timeAlive += timeUntilDeath;
-            gotchi.deathTimestamp = block.timestamp - (elapsedTime - timeUntilDeath);
-            emit GotchiDied(ownerOf(tokenId), tokenId);
-            return;
+            // Apply decay based on this post-sleep duration
+            decayHealth = calculateHealthDecay(decayDuration);
+            decayHappiness = calculateHappinessDecay(decayDuration);
+
+            // Adjust health and happiness, then determine if Gotchi died during this time
+            gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
+            gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
+
+            // If death occurs during the decay duration, adjust timeAlive up to death point
+            if (gotchi.health == 0 || gotchi.happiness == 0) {
+                uint256 timeUntilDeath = calculateTimeUntilDeath(tokenId);
+                gotchi.timeAlive += timeUntilDeath;
+                gotchi.deathTimestamp = block.timestamp - (decayDuration - timeUntilDeath);
+                emit GotchiDied(ownerOf(tokenId), tokenId);
+                return;
+            }
+
+            // If Gotchi is still alive after decay, add full decayDuration to timeAlive
+            gotchi.timeAlive += decayDuration;
+            gotchi.lastInteraction = block.timestamp;
+            emit DecayCalculated(decayHealth, decayHappiness);
+        } else {
+            // Regular decay handling
+            uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
+            decayHealth = calculateHealthDecay(elapsedTime);
+            decayHappiness = calculateHappinessDecay(elapsedTime);
+
+            gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
+            gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
+
+            if (gotchi.health == 0 || gotchi.happiness == 0) {
+                uint256 timeUntilDeath = calculateTimeUntilDeath(tokenId);
+                gotchi.timeAlive += timeUntilDeath;
+                gotchi.deathTimestamp = block.timestamp - (elapsedTime - timeUntilDeath);
+                emit GotchiDied(ownerOf(tokenId), tokenId);
+                return;
+            }
+
+            gotchi.timeAlive += elapsedTime;
+            gotchi.lastInteraction = block.timestamp;
         }
-
-        gotchi.timeAlive += elapsedTime;
-        gotchi.lastInteraction = block.timestamp;
     }
-}
-
 
     /**
     * @dev Verifies the token allowance and burns $HAHA tokens for a specified gameplay action.
@@ -336,9 +347,11 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         // Update timeAlive and decay if alive
         updateTimeAlive(tokenId);
 
-        // Apply the feed boost to health
-        gotchi.health = gotchi.health + feedHealthBoost > MAX_HEALTH ? MAX_HEALTH : gotchi.health + feedHealthBoost;
-        gotchi.lastFeedTime = block.timestamp;
+        if (isAlive(tokenId)) {
+            // Apply the feed boost to health
+            gotchi.health = gotchi.health + feedHealthBoost > MAX_HEALTH ? MAX_HEALTH : gotchi.health + feedHealthBoost;
+            gotchi.lastFeedTime = block.timestamp;
+         }
 
         emit GotchiFed(msg.sender, tokenId);
     }
@@ -362,16 +375,19 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         // Update timeAlive and decay if alive
         updateTimeAlive(tokenId);
 
-        // Apply the play boost to happiness
-        gotchi.happiness = gotchi.happiness + playHappinessBoost > MAX_HAPPINESS ? MAX_HAPPINESS : gotchi.happiness + playHappinessBoost;
-        gotchi.lastPlayTime = block.timestamp;
+        if (isAlive(tokenId)) {
+            // Apply the play boost to happiness
+            gotchi.happiness = gotchi.happiness + playHappinessBoost > MAX_HAPPINESS ? MAX_HAPPINESS : gotchi.happiness + playHappinessBoost;
+            gotchi.lastPlayTime = block.timestamp;
+        }
 
         emit GotchiPlayed(msg.sender, tokenId);
     }
 
      /**
     * @dev Puts a MamaGotchi to sleep, pausing decay, if cooldown has elapsed and it is not already sleeping.
-    * Updates `timeAlive`, sets sleep state, and emits GotchiSleeping event.
+    * This method applies a cooldown period after which sleep can be initiated again, and sets the sleep state,
+    * starting time, and other necessary flags.
     * @param tokenId The ID of the MamaGotchi to put to sleep.
     */
     function sleep(uint256 tokenId) external nonReentrant {
@@ -384,42 +400,45 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
 
         updateTimeAlive(tokenId); // Update timeAlive and lastInteraction
 
-        // Set the sleep state
-        gotchi.isSleeping = true;
-        gotchi.sleepStartTime = block.timestamp;
-        gotchi.lastSleepTime = block.timestamp; // Always update lastSleepTime on initiating sleep
+        if (isAlive(tokenId)) {
+            // Set the sleep state
+            gotchi.isSleeping = true;
+            gotchi.sleepStartTime = block.timestamp;
+            gotchi.lastSleepTime = block.timestamp; // Always update lastSleepTime on initiating sleep
+        }
 
         emit GotchiSleeping(msg.sender, tokenId, block.timestamp);
     }
 
     /**
-    * @dev Wakes a MamaGotchi, applying decay based on sleep duration.
-    * Caps decay at MAX_SLEEP_DURATION, updates `timeAlive`, and resets sleep state.
-    * Emits GotchiAwake and DecayCalculated events.
+    * @dev Wakes a MamaGotchi, checking if it survived the sleep period based on health and happiness decay.
+    * If death occurs during sleep, sets death timestamp and marks as no longer sleeping. If the Gotchi survives,
+    * simply updates its awake state. This method does not have a cooldown, allowing users to wake a Gotchi
+    * from sleep at any time.
     * @param tokenId The ID of the MamaGotchi to wake up.
     */
     function wake(uint256 tokenId) external nonReentrant {
-    Gotchi storage gotchi = gotchiStats[tokenId];
-    require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-    require(gotchi.isSleeping, "MamaGotchi says: I'm already awake!");
+        Gotchi storage gotchi = gotchiStats[tokenId];
+        require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+        require(gotchi.isSleeping, "MamaGotchi says: I'm already awake!");
 
-    // Apply time decay up to this moment
-    updateTimeAlive(tokenId);
+        // Apply time decay up to this moment
+        updateTimeAlive(tokenId);
 
-    // Check if Gotchi died during sleep after applying decay
-    if (gotchi.health == 0 || gotchi.happiness == 0) {
-        gotchi.isSleeping = false; // Reset sleep state
-        gotchi.deathTimestamp = block.timestamp; // Mark death timestamp
-        emit GotchiDied(ownerOf(tokenId), tokenId);
-        return;
+        // Check if Gotchi died during sleep after applying decay
+        if (gotchi.health == 0 || gotchi.happiness == 0) {
+            gotchi.isSleeping = false; // Reset sleep state
+            gotchi.deathTimestamp = block.timestamp; // Mark death timestamp
+            emit GotchiDied(ownerOf(tokenId), tokenId);
+            return;
+        }
+
+        // Reset the sleep state
+        gotchi.isSleeping = false;
+        gotchi.sleepStartTime = 0;
+
+        emit GotchiAwake(msg.sender, tokenId, 0, 0); // Emit wake event
     }
-
-    // Reset the sleep state
-    gotchi.isSleeping = false;
-    gotchi.sleepStartTime = 0;
-
-    emit GotchiAwake(msg.sender, tokenId, 0, 0); // Emit wake event
-}
    
      /**
     * @dev Manually saves the current `timeAlive` to the player's high score if it exceeds the previous score.
@@ -490,7 +509,6 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         playHappinessBoost = newPlayHappinessBoost;
     }
 
-
     /**
     * @dev Checks if the caller has sufficient allowance to mint a MamaGotchi.
     * @return True if allowance is sufficient, false otherwise.
@@ -508,8 +526,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Calculates health decay over a specified duration, using HEALTH_DECAY_RATE.
-    * @param duration Duration in seconds for which decay applies.
+    * @dev Calculates the health decay over a specified duration using the defined `HEALTH_DECAY_RATE`.
+    * This function converts the duration into decay points and applies it based on the rate.
+    * @param duration The duration in seconds over which decay is calculated.
     * @return The calculated health decay amount.
     */
     function calculateHealthDecay(uint256 duration) internal pure returns (uint256) {
@@ -518,8 +537,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
     
     /**
-    * @dev Calculates happiness decay over a specified duration, using HAPPINESS_DECAY_RATE.
-    * @param duration Duration in seconds for which decay applies.
+    * @dev Calculates the happiness decay over a specified duration using the defined `HAPPINESS_DECAY_RATE`.
+    * This function converts the duration into decay points and applies it based on the rate.
+    * @param duration The duration in seconds over which decay is calculated.
     * @return The calculated happiness decay amount.
     */
     function calculateHappinessDecay(uint256 duration) internal pure returns (uint256) {
@@ -527,85 +547,22 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         return (duration * HAPPINESS_DECAY_RATE) / (3600 * 100); // Converts to 4.16 points per hour
     }
 
+    /**
+    * @dev Calculates the time remaining until a MamaGotchi’s health or happiness reaches zero based on decay rates.
+    * Returns the shorter of the two times calculated for health and happiness, as death occurs when either reaches zero.
+    * @param tokenId The ID of the MamaGotchi to calculate time until death.
+    * @return The estimated time in seconds until death occurs.
+    */
      function calculateTimeUntilDeath(uint256 tokenId) internal view returns (uint256) {
-    Gotchi storage gotchi = gotchiStats[tokenId];
-    
-    // Calculate time until health or happiness reaches zero based on hourly decay rates
-    uint256 healthDecayTime = (gotchi.health * 3600 * 100) / HEALTH_DECAY_RATE;
- // Time in seconds until health reaches zero
-    uint256 happinessDecayTime = (gotchi.happiness * 3600 * 100) / HAPPINESS_DECAY_RATE;
- // Time in seconds until happiness reaches zero
+        Gotchi storage gotchi = gotchiStats[tokenId];
+        
+        // Calculate time until health or happiness reaches zero based on hourly decay rates
+        uint256 healthDecayTime = (gotchi.health * 3600 * 100) / HEALTH_DECAY_RATE;
+    // Time in seconds until health reaches zero
+        uint256 happinessDecayTime = (gotchi.happiness * 3600 * 100) / HAPPINESS_DECAY_RATE;
+    // Time in seconds until happiness reaches zero
 
-    // Return the lesser of the two times to determine when death occurs
-    return healthDecayTime < happinessDecayTime ? healthDecayTime : happinessDecayTime;
-}
-
-
-
-
-
-
-
-
-//
-//           Helper tests
-//
-//
-
-
-function getFeedCooldown() external view returns (uint256) {
-    return cooldowns.feed;
-}
-
-function getPlayCooldown() external view returns (uint256) {
-    return cooldowns.play;
-}
-
-function getSleepCooldown() external view returns (uint256) {
-    return cooldowns.sleep;
-}
-
-function getCooldownTime(string memory action) external view returns (uint256) {
-    if (keccak256(bytes(action)) == keccak256(bytes("play"))) {
-        return cooldowns.play;
-    } else if (keccak256(bytes(action)) == keccak256(bytes("feed"))) {
-        return cooldowns.feed;
-    } else if (keccak256(bytes(action)) == keccak256(bytes("sleep"))) {
-        return cooldowns.sleep;
-    } else {
-        revert("Invalid action");
+        // Return the lesser of the two times to determine when death occurs
+        return healthDecayTime < happinessDecayTime ? healthDecayTime : happinessDecayTime;
     }
-}
-
-function isActionReady(string memory action, uint256 tokenId) external view returns (bool) {
-    Gotchi storage gotchi = gotchiStats[tokenId];
-    
-    if (keccak256(bytes(action)) == keccak256(bytes("play"))) {
-        return block.timestamp >= gotchi.lastPlayTime + cooldowns.play;
-    } else if (keccak256(bytes(action)) == keccak256(bytes("feed"))) {
-        return block.timestamp >= gotchi.lastFeedTime + cooldowns.feed;
-    } else if (keccak256(bytes(action)) == keccak256(bytes("sleep"))) {
-        return block.timestamp >= gotchi.lastSleepTime + cooldowns.sleep;
-    } else {
-        revert("Invalid action");
-    }
-}
-
-function isTokenOwner(uint256 tokenId, address expectedOwner) external view returns (bool) {
-    return ownerOf(tokenId) == expectedOwner;
-}
-
-function testCheckAndMarkDeath(uint256 tokenId) external {
-    checkAndMarkDeath(tokenId);
-}
-
-function setHealthAndHappinessForTesting(uint256 tokenId, uint256 health, uint256 happiness) external onlyOwner {
-    gotchiStats[tokenId].health = health;
-    gotchiStats[tokenId].happiness = happiness;
-}
-
-function testUpdateTimeAlive(uint256 tokenId) external {
-    updateTimeAlive(tokenId);
-}
-
 }
