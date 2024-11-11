@@ -523,6 +523,215 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
   });
 
   //
+  // 3. Playing with MamaGotchi test
+  //
+
+  it("Should play with a Gotchi when it is awake and cooldown has passed", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Retrieve play cooldown, play happiness boost, and max happiness directly from the contract
+    const playCooldown = Number((await game.cooldowns()).play);
+    const playHappinessBoost = Number(await game.playHappinessBoost());
+    const maxHappiness = Number(await game.MAX_HAPPINESS());
+
+    // Advance time by enough seconds to exceed the play cooldown
+    await ethers.provider.send("evm_increaseTime", [playCooldown]);
+    await ethers.provider.send("evm_mine");
+
+    // Retrieve initial happiness and token balance for addr1
+    const initialHappiness = Number(
+      (await game.gotchiStats(tokenId)).happiness
+    );
+    console.log("Initial Happiness before play action:", initialHappiness); // Log initial happiness
+
+    const initialTokenBalance = await hahaToken.balanceOf(addr1.address);
+
+    // Play with the Gotchi and confirm no revert occurs
+    await hahaToken.connect(addr1).approve(game.target, playCost);
+    await game.connect(addr1).play(tokenId);
+
+    // Fetch Gotchi stats after playing
+    const gotchiAfterPlay = await game.gotchiStats(tokenId);
+    console.log(
+      "Happiness after play and decay:",
+      Number(gotchiAfterPlay.happiness)
+    ); // Log post-decay happiness
+
+    // Verify happiness increase, considering minor decay
+    const expectedHappinessRange = [
+      Math.min(initialHappiness + playHappinessBoost, maxHappiness) - 1,
+      Math.min(initialHappiness + playHappinessBoost, maxHappiness),
+    ];
+    expect(expectedHappinessRange).to.include(
+      Number(gotchiAfterPlay.happiness)
+    );
+
+    // Verify token burn by checking addr1's token balance
+    const tokenBalanceAfterPlay = await hahaToken.balanceOf(addr1.address);
+    expect(tokenBalanceAfterPlay).to.equal(initialTokenBalance - playCost);
+
+    // Verify lastPlayTime is updated to current block timestamp
+    const currentTimestamp = Number(
+      (await ethers.provider.getBlock("latest")).timestamp
+    );
+    expect(Number(gotchiAfterPlay.lastPlayTime)).to.equal(currentTimestamp);
+  });
+
+  it("Should prevent playing multiple times within the cooldown period", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Retrieve play cooldown from the contract
+    const playCooldown = Number((await game.cooldowns()).play);
+
+    // First play attempt (should pass)
+    await hahaToken.connect(addr1).approve(game.target, playCost);
+    await game.connect(addr1).play(tokenId);
+
+    // Attempt a second play immediately, expecting it to revert
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm tired now!"
+    );
+
+    // Advance time by the cooldown duration to allow playing again
+    await ethers.provider.send("evm_increaseTime", [playCooldown]);
+    await ethers.provider.send("evm_mine");
+
+    // Approve tokens again and successfully play after cooldown
+    await hahaToken.connect(addr1).approve(game.target, playCost);
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should prevent playing with a Gotchi while it is asleep", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Approve tokens for playing and sleeping costs (playCost reused if sleep cost same)
+    await hahaToken.connect(addr1).approve(game.target, playCost);
+
+    // Put the Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Attempt to play while the Gotchi is asleep, expecting a revert
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi is asleep!"
+    );
+
+    // Wake the Gotchi up to clean up state for future tests
+    await game.connect(addr1).wake(tokenId);
+  });
+
+  it("Should prevent playing a Gotchi if $HAHA allowance is zero", async function () {
+    const tokenId = 1;
+
+    // Set the $HAHA allowance for playing to zero
+    await hahaToken.connect(addr1).approve(game.target, 0);
+
+    // Attempt to play with the Gotchi, expecting a revert due to zero allowance
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "Approval required for playing"
+    );
+  });
+
+  it("Should prevent playing a Gotchi if $HAHA balance is insufficient", async function () {
+    // Transfer away addr1's HAHA tokens to simulate insufficient balance
+    const balance = await hahaToken.balanceOf(addr1.address);
+    await hahaToken.connect(addr1).transfer(owner.address, balance);
+
+    // Attempt to play with the Gotchi and expect a revert
+    await expect(game.connect(addr1).play(1)).to.be.reverted;
+  });
+
+  it("Should allow playing a Gotchi exactly when cooldown expires", async function () {
+    const tokenId = 1;
+
+    // Initial play to start the cooldown
+    await game.connect(addr1).play(tokenId);
+
+    // Increase time to exactly match the cooldown period
+    const playCooldown = (await game.cooldowns()).play;
+    await ethers.provider.send("evm_increaseTime", [Number(playCooldown)]);
+    await ethers.provider.send("evm_mine");
+
+    // Attempt to play with the Gotchi again exactly at cooldown expiration
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should prevent playing a dead Gotchi", async function () {
+    const tokenId = 1;
+
+    // Step 1: Advance time to ensure Gotchi's health or happiness decays to zero
+    const twoDays = 48 * 60 * 60; // Adjust duration based on expected decay to zero health/happiness
+    await ethers.provider.send("evm_increaseTime", [twoDays]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 2: Attempt to play with the Gotchi, expecting the contract to recognize it as dead and revert
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi is dead!"
+    );
+  });
+
+  it("Should prevent Gotchi's happiness from exceeding MAX_HAPPINESS when playing", async function () {
+    const tokenId = 1;
+
+    // Step 1: Bring happiness close to MAX_HAPPINESS by playing multiple times
+    const maxHappiness = BigInt(100); // MAX_HAPPINESS defined as BigInt
+    const playHappinessBoost = BigInt(10); // playHappinessBoost also as BigInt
+
+    for (let i = 0; i < 2; i++) {
+      // Play and increment time to simulate cooldown reset
+      await game.connect(addr1).play(tokenId);
+      const playCooldown = (await game.cooldowns()).play; // Already BigInt in ethers v6
+      await ethers.provider.send("evm_increaseTime", [Number(playCooldown)]);
+      await ethers.provider.send("evm_mine");
+    }
+
+    // Re-fetch Gotchi stats after preliminary play actions
+    let gotchi = await game.gotchiStats(tokenId);
+
+    // Confirm that happiness is close to, but less than, MAX_HAPPINESS
+    expect(gotchi.happiness).to.be.at.most(maxHappiness);
+    expect(gotchi.happiness).to.be.greaterThan(
+      maxHappiness - playHappinessBoost
+    );
+
+    // Step 2: Play one more time to reach MAX_HAPPINESS and ensure it does not exceed
+    await game.connect(addr1).play(tokenId);
+
+    gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.happiness).to.equal(maxHappiness); // Happiness should cap at MAX_HAPPINESS
+  });
+
+  it("Should enforce play cooldown correctly", async function () {
+    const tokenId = 1n;
+
+    // Step 0: Check that the play cooldown is set correctly after deployment
+    const playCooldown = await game
+      .cooldowns()
+      .then((cooldowns) => cooldowns.play);
+    expect(playCooldown).to.equal(900); // Adjust this based on contract's play cooldown
+
+    // Step 1: Perform an initial play to set the cooldown
+    await game.connect(addr1).play(tokenId);
+
+    // Step 2: Confirm lastPlayTime is set correctly
+    const initialPlayTime = await game
+      .gotchiStats(tokenId)
+      .then((stats) => stats.lastPlayTime);
+    expect(initialPlayTime).to.be.greaterThan(0);
+
+    // Step 3: Try to play immediately, expecting a revert due to cooldown
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm tired now!"
+    );
+
+    // Step 4: Increment time to complete the cooldown period
+    await ethers.provider.send("evm_increaseTime", [Number(playCooldown)]); // Move time forward by cooldown period
+    await ethers.provider.send("evm_mine");
+
+    // Play should now be allowed as the cooldown has expired
+    await expect(game.connect(addr1).play(tokenId)).to.not.be.reverted;
+  });
+
+  //
   //
   //
   //

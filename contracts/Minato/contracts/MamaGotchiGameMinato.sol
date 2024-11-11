@@ -329,10 +329,6 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         ERC20Burnable(address(hahaToken)).burnFrom(msg.sender, amount);
     }
 
-
-
-
-    
     /**
     * @dev Feeds a MamaGotchi, increasing its health if cooldown has elapsed and it is not asleep.
     * Deducts $HAHA tokens, updates `timeAlive`, and emits GotchiFed event.
@@ -379,17 +375,20 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         require(!gotchi.isSleeping, "MamaGotchi is asleep!");
         require(block.timestamp >= gotchi.lastPlayTime + cooldowns.play, "MamaGotchi says: I'm tired now!");
 
-        // Burn tokens first if all checks pass
+       
+         // Update timeAlive and apply any decay
+    updateTimeAlive(tokenId);
+
+    // Post-decay validation check
+    require(isAlive(tokenId), "MamaGotchi is dead!");
+
+             // Burn tokens first if all checks pass
         requireAndBurnTokens(playCost, "playing");
 
-        // Update timeAlive and decay if alive
-        updateTimeAlive(tokenId);
-
-        if (isAlive(tokenId)) {
             // Apply the play boost to happiness
             gotchi.happiness = gotchi.happiness + playHappinessBoost > MAX_HAPPINESS ? MAX_HAPPINESS : gotchi.happiness + playHappinessBoost;
             gotchi.lastPlayTime = block.timestamp;
-        }
+    
 
         emit GotchiPlayed(msg.sender, tokenId);
     }
