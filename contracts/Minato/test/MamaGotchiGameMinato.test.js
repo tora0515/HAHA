@@ -274,6 +274,255 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
   });
 
   //
+  // 2. Feeding MamaGotchi test
+  //
+
+  it("Should feed a Gotchi when it is awake and cooldown has passed", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Retrieve feed cooldown, feed health boost, and max health directly from the contract
+    const feedCooldown = Number((await game.cooldowns()).feed);
+    const feedHealthBoost = Number(await game.feedHealthBoost());
+    const maxHealth = Number(await game.MAX_HEALTH());
+
+    // Advance time by enough seconds to exceed the feed cooldown
+    await ethers.provider.send("evm_increaseTime", [feedCooldown]);
+    await ethers.provider.send("evm_mine");
+
+    // Retrieve initial health and token balance for addr1
+    const initialHealth = Number((await game.gotchiStats(tokenId)).health);
+    const initialTokenBalance = await hahaToken.balanceOf(addr1.address);
+
+    // Feed the Gotchi and confirm no revert occurs
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+    await game.connect(addr1).feed(tokenId);
+
+    // Verify health increase, respecting max health cap
+    const gotchi = await game.gotchiStats(tokenId);
+    const expectedHealth = Math.min(initialHealth + feedHealthBoost, maxHealth);
+    expect(Number(gotchi.health)).to.equal(expectedHealth);
+
+    // Verify token burn by checking addr1's token balance
+    const tokenBalanceAfterFeed = await hahaToken.balanceOf(addr1.address);
+    expect(tokenBalanceAfterFeed).to.equal(initialTokenBalance - feedCost);
+
+    // Verify lastFeedTime is updated to current block timestamp
+    const currentTimestamp = Number(
+      (await ethers.provider.getBlock("latest")).timestamp
+    );
+    expect(Number(gotchi.lastFeedTime)).to.equal(currentTimestamp);
+  });
+
+  it("Should prevent feeding multiple times within the cooldown period", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Retrieve feed cooldown from the contract
+    const feedCooldown = Number((await game.cooldowns()).feed);
+
+    // First feed attempt (should pass)
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+    await game.connect(addr1).feed(tokenId);
+
+    // Attempt a second feed immediately, expecting it to revert
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm full!"
+    );
+
+    // Advance time by the cooldown duration to allow feeding again
+    await ethers.provider.send("evm_increaseTime", [feedCooldown]);
+    await ethers.provider.send("evm_mine");
+
+    // Approve tokens again and successfully feed after cooldown
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+    await expect(game.connect(addr1).feed(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should prevent feeding a Gotchi while it is asleep", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Approve tokens for feeding and sleeping costs (feedCost reused if sleep cost same)
+    await hahaToken.connect(addr1).approve(game.target, feedCost);
+
+    // Put the Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Attempt to feed while the Gotchi is asleep, expecting a revert
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi is asleep!"
+    );
+
+    // Wake the Gotchi up to clean up state for future tests
+    await game.connect(addr1).wake(tokenId);
+  });
+
+  it("Should prevent feeding a Gotchi if $HAHA allowance is zero", async function () {
+    const tokenId = 1;
+
+    // Set the $HAHA allowance for feeding to zero
+    await hahaToken.connect(addr1).approve(game.target, 0);
+
+    // Attempt to feed the Gotchi, expecting a revert due to zero allowance
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "Approval required for feeding"
+    );
+  });
+
+  it("Should prevent feeding a Gotchi if $HAHA balance is insufficient", async function () {
+    // Transfer away addr1's HAHA tokens to simulate insufficient balance
+    const balance = await hahaToken.balanceOf(addr1.address);
+    await hahaToken.connect(addr1).transfer(owner.address, balance);
+
+    // Attempt to feed the Gotchi and expect a revert
+    await expect(game.connect(addr1).feed(1)).to.be.reverted;
+  });
+
+  it("Should prevent feeding a Gotchi if $HAHA balance is insufficient", async function () {
+    // Save initial HAHA balance and Gotchi health
+    const initialBalance = await hahaToken.balanceOf(addr1.address);
+    const initialHealth = (await game.gotchiStats(1)).health;
+
+    // Transfer away addr1's HAHA tokens to simulate insufficient balance
+    await hahaToken.connect(addr1).transfer(owner.address, initialBalance);
+
+    // Attempt to feed the Gotchi and expect a revert
+    await expect(game.connect(addr1).feed(1)).to.be.reverted;
+
+    // Confirm HAHA balance and health haven't changed
+    const finalBalance = await hahaToken.balanceOf(addr1.address);
+    const finalHealth = (await game.gotchiStats(1)).health;
+
+    expect(finalBalance).to.equal(0); // No HAHA tokens should remain for addr1
+    expect(finalHealth).to.equal(initialHealth); // Health should remain unchanged
+  });
+
+  it("Should prevent feeding a Gotchi if $HAHA balance is insufficient", async function () {
+    // Save initial HAHA balance and Gotchi health
+    const initialBalance = await hahaToken.balanceOf(addr1.address);
+    const initialHealth = (await game.gotchiStats(1)).health;
+
+    // Transfer away addr1's HAHA tokens to simulate insufficient balance
+    await hahaToken.connect(addr1).transfer(owner.address, initialBalance);
+
+    try {
+      // Attempt to feed the Gotchi, expecting a revert
+      await game.connect(addr1).feed(1);
+      // If no error was thrown, force fail the test
+      throw new Error(
+        "Expected feed to revert due to insufficient balance, but it succeeded"
+      );
+    } catch (error) {
+      // Check that balance and health haven't changed
+      const finalBalance = await hahaToken.balanceOf(addr1.address);
+      const finalHealth = (await game.gotchiStats(1)).health;
+
+      expect(finalBalance).to.equal(0); // No HAHA tokens should remain for addr1
+      expect(finalHealth).to.equal(initialHealth); // Health should remain unchanged
+    }
+  });
+
+  it("Should allow feeding a Gotchi exactly when cooldown expires", async function () {
+    const tokenId = 1;
+
+    // Initial feed to start the cooldown
+    await game.connect(addr1).feed(tokenId);
+
+    // Increase time to exactly match the cooldown period, using BigInt directly
+    const feedCooldown = (await game.cooldowns()).feed;
+    await ethers.provider.send("evm_increaseTime", [Number(feedCooldown)]);
+    await ethers.provider.send("evm_mine");
+
+    // Attempt to feed the Gotchi again exactly at cooldown expiration
+    await expect(game.connect(addr1).feed(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should prevent feeding a Gotchi if $HAHA allowance is insufficient", async function () {
+    const tokenId = 1;
+
+    // Set allowance to a value lower than feedCost to simulate insufficient allowance
+    const insufficientAllowance = (await game.feedCost()) - BigInt(1); // Setting it just below feedCost
+    await hahaToken.connect(addr1).approve(game.target, insufficientAllowance);
+
+    // Attempt to feed the Gotchi with insufficient allowance, expecting a revert
+    await expect(game.connect(addr1).feed(tokenId)).to.be.reverted;
+  });
+
+  it("Should prevent feeding a dead Gotchi", async function () {
+    const tokenId = 1;
+
+    // Step 1: Advance time to ensure Gotchi's health or happiness decays to zero
+    const twoDays = 48 * 60 * 60; // Adjust duration based on expected decay to zero health/happiness
+    await ethers.provider.send("evm_increaseTime", [twoDays]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 2: Attempt to feed the Gotchi, expecting the contract to recognize it as dead and revert
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi is dead!"
+    );
+  });
+
+  it("Should prevent Gotchi's health from exceeding MAX_HEALTH when feeding", async function () {
+    const tokenId = 1;
+
+    // Step 1: Bring health close to MAX_HEALTH by feeding multiple times
+    const maxHealth = BigInt(100); // MAX_HEALTH defined as BigInt
+    const feedHealthBoost = BigInt(10); // feedHealthBoost also as BigInt
+
+    for (let i = 0; i < 2; i++) {
+      // Feed and increment time to simulate cooldown reset
+      await game.connect(addr1).feed(tokenId);
+      const feedCooldown = (await game.cooldowns()).feed; // Already BigInt in ethers v6
+      await ethers.provider.send("evm_increaseTime", [Number(feedCooldown)]);
+      await ethers.provider.send("evm_mine");
+    }
+
+    // Re-fetch Gotchi stats after preliminary feedings
+    let gotchi = await game.gotchiStats(tokenId);
+
+    // Confirm that health is close to, but less than, MAX_HEALTH
+    expect(gotchi.health).to.be.at.most(maxHealth);
+    expect(gotchi.health).to.be.greaterThan(maxHealth - feedHealthBoost);
+
+    // Step 2: Feed one more time to reach MAX_HEALTH and ensure it does not exceed
+    await game.connect(addr1).feed(tokenId);
+
+    gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.health).to.equal(maxHealth); // Health should cap at MAX_HEALTH
+  });
+
+  it("Should enforce feed cooldown correctly", async function () {
+    const tokenId = 1n;
+
+    // Step 0: Check that the feed cooldown is set correctly after deployment
+    const feedCooldown = await game
+      .cooldowns()
+      .then((cooldowns) => cooldowns.feed);
+    console.log("Feed cooldown (expected 600):", feedCooldown.toString());
+    expect(feedCooldown).to.equal(600);
+
+    // Step 1: Perform an initial feed to set the cooldown
+    await game.connect(addr1).feed(tokenId);
+
+    // Step 2: Confirm lastFeedTime is set correctly
+    const initialFeedTime = await game
+      .gotchiStats(tokenId)
+      .then((stats) => stats.lastFeedTime);
+    console.log("lastFeedTime after initial feed:", initialFeedTime.toString());
+    expect(initialFeedTime).to.be.greaterThan(0);
+
+    // Step 3: Try to feed immediately, expecting a revert due to cooldown
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm full!"
+    );
+
+    // Step 4: Increment time to complete the cooldown period
+    await ethers.provider.send("evm_increaseTime", [Number(feedCooldown)]); // Move time forward by cooldown period
+    await ethers.provider.send("evm_mine");
+
+    // Feed should now be allowed as the cooldown has expired
+    await expect(game.connect(addr1).feed(tokenId)).to.not.be.reverted;
+  });
+
+  //
   //
   //
   //
