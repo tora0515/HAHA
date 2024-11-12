@@ -732,6 +732,269 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
   });
 
   //
+  // 4. Sleep Tests
+  //
+
+  it("Should successfully put the Gotchi to sleep and verify sleep start time and isSleeping state", async function () {
+    const tokenId = 1;
+
+    // Advance time if necessary to ensure any sleep cooldown has passed
+    const sleepCooldown = Number((await game.cooldowns()).sleep);
+    await ethers.provider.send("evm_increaseTime", [sleepCooldown]);
+    await ethers.provider.send("evm_mine");
+
+    // Put the Gotchi to sleep
+    const tx = await game.connect(addr1).sleep(tokenId);
+
+    // Retrieve the updated Gotchi stats
+    const gotchi = await game.gotchiStats(tokenId);
+
+    // Verify the Gotchi is now sleeping
+    expect(gotchi.isSleeping).to.be.true;
+
+    // Verify sleepStartTime is set to the current block timestamp
+    const currentTimestamp = Number(
+      (await ethers.provider.getBlock("latest")).timestamp
+    );
+    expect(Number(gotchi.sleepStartTime)).to.equal(currentTimestamp);
+
+    // Check that the GotchiSleeping event was emitted with the correct parameters
+    await expect(tx)
+      .to.emit(game, "GotchiSleeping")
+      .withArgs(addr1.address, tokenId, currentTimestamp);
+  });
+
+  it("Should handle multiple sleep and wake cycles correctly, enforcing cooldown and state transitions", async function () {
+    const tokenId = 1;
+    const sleepCooldown = Number((await game.cooldowns()).sleep);
+
+    for (let cycle = 0; cycle < 2; cycle++) {
+      // Step 1: Ensure sleep cooldown has passed
+      await ethers.provider.send("evm_increaseTime", [sleepCooldown]);
+      await ethers.provider.send("evm_mine");
+
+      // Step 2: Put the Gotchi to sleep
+      const sleepTx = await game.connect(addr1).sleep(tokenId);
+
+      // Verify the Gotchi is in sleep mode
+      let gotchi = await game.gotchiStats(tokenId);
+      expect(gotchi.isSleeping).to.be.true;
+
+      // Verify GotchiSleeping event
+      const currentTimestamp = Number(
+        (await ethers.provider.getBlock("latest")).timestamp
+      );
+      await expect(sleepTx)
+        .to.emit(game, "GotchiSleeping")
+        .withArgs(addr1.address, tokenId, currentTimestamp);
+
+      // Step 3: Wake the Gotchi up
+      const wakeTx = await game.connect(addr1).wake(tokenId);
+
+      // Verify the Gotchi is awake
+      gotchi = await game.gotchiStats(tokenId);
+      expect(gotchi.isSleeping).to.be.false;
+
+      // Verify GotchiAwake event
+      await expect(wakeTx)
+        .to.emit(game, "GotchiAwake")
+        .withArgs(addr1.address, tokenId, 0, 0);
+    }
+  });
+
+  it("Should prevent putting a Gotchi to sleep if the cooldown isn't met", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Step 1: Put the Gotchi to sleep initially to set the lastSleepTime
+    await game.connect(addr1).sleep(tokenId);
+
+    // Step 2: Wake the Gotchi up to reset its sleep state
+    await game.connect(addr1).wake(tokenId);
+
+    // Step 3: Attempt to put it back to sleep before cooldown expires
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm not sleepy!"
+    );
+
+    // Step 4: Advance time to complete the cooldown
+    const sleepCooldown = Number((await game.cooldowns()).sleep);
+    await ethers.provider.send("evm_increaseTime", [sleepCooldown]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 5: Now attempt to put the Gotchi to sleep again after cooldown has passed
+    await expect(game.connect(addr1).sleep(tokenId)).to.not.be.reverted;
+  });
+
+  it("Should handle multiple sleep and wake cycles, enforcing cooldowns and state transitions", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Step 1: Put the Gotchi to sleep for the first time
+    await game.connect(addr1).sleep(tokenId);
+    let gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.isSleeping).to.be.true; // Ensure Gotchi is now sleeping
+
+    // Step 2: Try feeding while sleeping, expecting "MamaGotchi is asleep!" error
+    await expect(game.connect(addr1).feed(tokenId)).to.be.revertedWith(
+      "MamaGotchi is asleep!"
+    );
+
+    // Step 3: Wake the Gotchi and verify wake state
+    await game.connect(addr1).wake(tokenId);
+    gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.isSleeping).to.be.false; // Confirm Gotchi is now awake
+
+    // Step 4: Attempt to put Gotchi back to sleep immediately; expect cooldown error
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi says: I'm not sleepy!"
+    );
+
+    // Step 5: Fast-forward time to allow cooldown to reset, then put Gotchi back to sleep
+    const sleepCooldown = (await game.cooldowns()).sleep;
+    await ethers.provider.send("evm_increaseTime", [Number(sleepCooldown)]);
+    await ethers.provider.send("evm_mine");
+
+    await game.connect(addr1).sleep(tokenId);
+    gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.isSleeping).to.be.true; // Confirm Gotchi is sleeping again
+
+    // Step 6: Attempt to play while sleeping to confirm "MamaGotchi is asleep!" error
+    await expect(game.connect(addr1).play(tokenId)).to.be.revertedWith(
+      "MamaGotchi is asleep!"
+    );
+
+    // Step 7: Wake Gotchi again and confirm wake state
+    await game.connect(addr1).wake(tokenId);
+    gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.isSleeping).to.be.false; // Confirm awake
+
+    // End of test: multiple cycles passed without issues
+  });
+
+  it("Should prevent putting a dead Gotchi to sleep", async function () {
+    const tokenId = 1;
+
+    // Step 1: Advance time by 48 hours to ensure health and happiness decay to zero.
+    const twoDays = 48 * 60 * 60;
+    await ethers.provider.send("evm_increaseTime", [twoDays]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Attempt to put the Gotchi to sleep, expecting it to fail since Gotchi is dead.
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "MamaGotchi is dead!"
+    );
+  });
+
+  it("Should apply decay correctly if Gotchi sleeps beyond MAX_SLEEP_DURATION", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Put Gotchi to sleep initially
+    await game.connect(addr1).sleep(tokenId);
+
+    // Retrieve max sleep duration and calculate extended sleep time
+    const maxSleepDuration = await game.MAX_SLEEP_DURATION();
+    const extendedSleepTime = Number(maxSleepDuration) + 3600; // 1 hour beyond max sleep
+
+    // Fast-forward time by max sleep duration + extra time
+    await ethers.provider.send("evm_increaseTime", [extendedSleepTime]);
+    await ethers.provider.send("evm_mine");
+
+    // Wake the Gotchi to apply decay
+    await game.connect(addr1).wake(tokenId);
+
+    // Verify health and happiness have decayed
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.health).to.be.lessThan(80);
+    expect(gotchi.happiness).to.be.lessThan(80);
+    expect(gotchi.deathTimestamp).to.equal(0); // Ensure Gotchi is still alive if health/happiness are above 0
+  });
+
+  it("Should retain health and happiness at 80 when woken up at exact MAX_SLEEP_DURATION", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Put Gotchi to sleep initially
+    await game.connect(addr1).sleep(tokenId);
+
+    // Retrieve max sleep duration and advance time by exactly this amount
+    const maxSleepDuration = await game.MAX_SLEEP_DURATION();
+    await ethers.provider.send("evm_increaseTime", [Number(maxSleepDuration)]);
+    await ethers.provider.send("evm_mine");
+
+    // Wake the Gotchi to apply potential decay
+    await game.connect(addr1).wake(tokenId);
+
+    // Verify health and happiness are still at their original values, with no decay applied
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.health).to.equal(80); // Health should remain unchanged
+    expect(gotchi.happiness).to.equal(80); // Happiness should remain unchanged
+  });
+
+  it("Should not decay health or happiness if woken up before MAX_SLEEP_DURATION", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Step 1: Put the Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Step 2: Advance time to just before MAX_SLEEP_DURATION
+    const maxSleepDuration = await game.MAX_SLEEP_DURATION();
+    const wakeUpBeforeDecay = Number(maxSleepDuration) - 60; // Waking up 1 minute before MAX_SLEEP_DURATION
+    await ethers.provider.send("evm_increaseTime", [wakeUpBeforeDecay]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Wake the Gotchi before any decay is applied
+    await game.connect(addr1).wake(tokenId);
+
+    // Retrieve Gotchi stats to verify no decay in health or happiness
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.health).to.equal(80); // Health should be unchanged
+    expect(gotchi.happiness).to.equal(80); // Happiness should be unchanged
+  });
+
+  it("Should mark Gotchi as dead if health or happiness decays to zero during sleep before MAX_SLEEP_DURATION", async function () {
+    const tokenId = 1;
+
+    // Step 1: Put Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Step 2: Advance time beyond a point where decay will reach zero, beyond MAX_SLEEP_DURATION
+    const excessiveTimeJump = 2 * 24 * 60 * 60; // Two days, ample time for decay to zero
+    await ethers.provider.send("evm_increaseTime", [excessiveTimeJump]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Attempt to wake the Gotchi; this should apply decay and set it as dead if health/happiness are zero
+    await expect(game.connect(addr1).wake(tokenId)).to.emit(game, "GotchiDied");
+
+    // Fetch the Gotchi stats to confirm death state
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.health).to.equal(0);
+    expect(gotchi.happiness).to.equal(0);
+    expect(gotchi.deathTimestamp).to.be.greaterThan(0); // Ensure deathTimestamp is set
+  });
+
+  it("Should cap timeAlive accumulation to MAX_SLEEP_DURATION during extended sleep", async function () {
+    const tokenId = 1;
+    const maxSleepDuration = await game.MAX_SLEEP_DURATION();
+
+    // Step 1: Put the Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Step 2: Advance time far beyond MAX_SLEEP_DURATION (e.g., by 2x the maximum)
+    await ethers.provider.send("evm_increaseTime", [
+      Number(maxSleepDuration) * 2,
+    ]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Wake the Gotchi
+    await game.connect(addr1).wake(tokenId);
+
+    // Step 4: Verify that timeAlive was only accumulated up to MAX_SLEEP_DURATION with a small tolerance
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(Number(gotchi.timeAlive)).to.be.within(
+      Number(maxSleepDuration) - 2,
+      Number(maxSleepDuration) + 2
+    );
+  });
+
+  //
   //
   //
   //

@@ -238,6 +238,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         emit GotchiDied(player, tokenId);
     }
 
+
     /**
     * @dev Updates the `timeAlive` counter and applies health and happiness decay for a MamaGotchi.
     * Decay is based on the duration since the last interaction or sleep start. Adjusts health and
@@ -404,17 +405,19 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
 
         require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
         require(isAlive(tokenId), "MamaGotchi is dead!");
-        require(!gotchi.isSleeping, "MamaGotchi says: I'm already in dreamland, shhh!");
         require(block.timestamp >= gotchi.lastSleepTime + cooldowns.sleep, "MamaGotchi says: I'm not sleepy!");
+        require(!gotchi.isSleeping, "MamaGotchi says: I'm already in dreamland, shhh!");
+        
 
         updateTimeAlive(tokenId); // Update timeAlive and lastInteraction
 
-        if (isAlive(tokenId)) {
-            // Set the sleep state
-            gotchi.isSleeping = true;
-            gotchi.sleepStartTime = block.timestamp;
-            gotchi.lastSleepTime = block.timestamp; // Always update lastSleepTime on initiating sleep
-        }
+        require(isAlive(tokenId), "MamaGotchi is dead!");
+
+        // Set the sleep state
+        gotchi.isSleeping = true;
+        gotchi.sleepStartTime = block.timestamp;
+        gotchi.lastSleepTime = block.timestamp; // Always update lastSleepTime on initiating sleep
+
 
         emit GotchiSleeping(msg.sender, tokenId, block.timestamp);
     }
