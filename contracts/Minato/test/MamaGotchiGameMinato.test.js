@@ -1120,6 +1120,64 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     await expect(game.connect(addr1).sleep(tokenId)).to.be.reverted;
   });
 
+  it("Should update the leaderboard with timeAlive if Gotchi is alive and timeAlive exceeds previous high score", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Step 1: Mint the Gotchi and confirm initial leaderboard score is zero
+    let initialScore = await game.playerHighScores(addr1.address);
+    console.log("Initial leaderboard score:", initialScore.toString()); // Log initial score
+    expect(initialScore).to.equal(0);
+
+    // Step 2: Advance time and call manualSaveToLeaderboard to simulate accumulation of timeAlive
+    const oneHourInSeconds = 60 * 60;
+    await ethers.provider.send("evm_increaseTime", [oneHourInSeconds]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Manually save to leaderboard and confirm leaderboard updates with timeAlive
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    const gotchi = await game.gotchiStats(tokenId);
+    const updatedScore = await game.playerHighScores(addr1.address);
+
+    // Log the Gotchi's timeAlive and the updated leaderboard score
+    console.log("Gotchi's timeAlive:", gotchi.timeAlive.toString());
+    console.log("Updated leaderboard score:", updatedScore.toString());
+
+    // Verify that leaderboard's updated score matches the Gotchi's timeAlive
+    expect(updatedScore).to.equal(gotchi.timeAlive);
+  });
+
+  it("Should update leaderboard with accumulated timeAlive after idle time when manualSaveToLeaderboard is called", async function () {
+    const tokenId = 1; // ID of the Gotchi owned by addr1
+
+    // Step 1: Check initial leaderboard score is zero and log it
+    let initialScore = await game.playerHighScores(addr1.address);
+    console.log("Initial leaderboard score:", initialScore.toString()); // Log initial score
+    expect(initialScore).to.equal(0);
+
+    // Step 2: Simulate idle time without interactions
+    const twoHoursInSeconds = 2 * 60 * 60;
+    await ethers.provider.send("evm_increaseTime", [twoHoursInSeconds]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Manually save to leaderboard and confirm leaderboard updates with the idle time accumulated
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+    const gotchi = await game.gotchiStats(tokenId);
+    const updatedScore = await game.playerHighScores(addr1.address);
+
+    // Log the Gotchi's timeAlive and the updated leaderboard score
+    console.log(
+      "Gotchi's timeAlive after idle time:",
+      gotchi.timeAlive.toString()
+    );
+    console.log(
+      "Updated leaderboard score after idle time:",
+      updatedScore.toString()
+    );
+
+    // Verify that leaderboard's updated score matches the Gotchi's timeAlive after idle time
+    expect(updatedScore).to.equal(gotchi.timeAlive);
+  });
+
   //
   //
   //

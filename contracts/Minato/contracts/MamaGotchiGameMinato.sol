@@ -254,14 +254,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     // Exit early if Gotchi is already dead
     if (gotchi.deathTimestamp != 0) {
         return;
-    }
-
-    // Pre-check: if health or happiness is already zero, skip further calculations
-    if (gotchi.health == 0 || gotchi.happiness == 0) {
-        gotchi.deathTimestamp = block.timestamp;
-        emit GotchiDied(ownerOf(tokenId), tokenId);
-        return;
-    }
+    }    
 
     uint256 decayHealth = 0;
     uint256 decayHappiness = 0;
@@ -464,19 +457,40 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     * @param tokenId The ID of the MamaGotchi.
     */
     function manualSaveToLeaderboard(uint256 tokenId) external nonReentrant {
-        require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-        require(isAlive(tokenId), "MamaGotchi isn't alive!");
+    require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
 
-        // Calculate the current timeAlive but don't update lastInteraction yet
-        uint256 currentTimeAlive = gotchiStats[tokenId].timeAlive + (block.timestamp - gotchiStats[tokenId].lastInteraction);
+    // Check if Gotchi is alive or dead
+    if (!isAlive(tokenId)) {
+        // Gotchi is dead, use existing timeAlive value directly
+        uint256 currentTimeAlive = gotchiStats[tokenId].timeAlive;
 
-        // Update high score if current timeAlive exceeds the previous high score
+        // Update leaderboard if this is the highest timeAlive score for the player
+        if (currentTimeAlive > playerHighScores[msg.sender]) {
+            playerHighScores[msg.sender] = currentTimeAlive;
+            emit LeaderboardUpdated(msg.sender, currentTimeAlive, "AllTimeHighRound");
+        }
+
+    } else {
+        // Gotchi is alive, so we need to update timeAlive to ensure it's current
+        updateTimeAlive(tokenId);
+
+        // After updating, retrieve the latest timeAlive value
+        uint256 currentTimeAlive = gotchiStats[tokenId].timeAlive;
+
+        // Update leaderboard if this is the highest timeAlive score for the player
         if (currentTimeAlive > playerHighScores[msg.sender]) {
             playerHighScores[msg.sender] = currentTimeAlive;
             gotchiStats[tokenId].lastInteraction = block.timestamp;
             emit LeaderboardUpdated(msg.sender, currentTimeAlive, "AllTimeHighRound");
         }
     }
+    
+    // If the Gotchi just died due to the update, emit a death event
+    if (!isAlive(tokenId) && gotchiStats[tokenId].deathTimestamp == block.timestamp) {
+        emit GotchiDied(msg.sender, tokenId);
+    }
+}
+
 
     /**
     * @dev Sets a new minting cost for creating a MamaGotchi.
