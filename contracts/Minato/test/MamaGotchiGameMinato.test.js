@@ -340,8 +340,9 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
   it("Should prevent feeding a Gotchi while it is asleep", async function () {
     const tokenId = 1; // ID of the Gotchi owned by addr1
 
-    // Approve tokens for feeding and sleeping costs (feedCost reused if sleep cost same)
-    await hahaToken.connect(addr1).approve(game.target, feedCost);
+    // Approve tokens for sleeping cost specifically (now required by the updated contract)
+    const sleepCost = await game.sleepCost();
+    await hahaToken.connect(addr1).approve(game.target, sleepCost);
 
     // Put the Gotchi to sleep
     await game.connect(addr1).sleep(tokenId);
@@ -604,8 +605,9 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
   it("Should prevent playing with a Gotchi while it is asleep", async function () {
     const tokenId = 1; // ID of the Gotchi owned by addr1
 
-    // Approve tokens for playing and sleeping costs (playCost reused if sleep cost same)
-    await hahaToken.connect(addr1).approve(game.target, playCost);
+    // Approve tokens for sleeping cost specifically (now required by the updated contract)
+    const sleepCost = await game.sleepCost();
+    await hahaToken.connect(addr1).approve(game.target, sleepCost);
 
     // Put the Gotchi to sleep
     await game.connect(addr1).sleep(tokenId);
@@ -992,6 +994,130 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
       Number(maxSleepDuration) - 2,
       Number(maxSleepDuration) + 2
     );
+  });
+
+  it("Should reset sleep cooldown for a newly minted Gotchi after the previous Gotchi's death", async function () {
+    const initialTokenId = 1;
+
+    // Retrieve the sleep cost for approval
+    const sleepCost = await game.sleepCost();
+
+    // Step 1: Approve and put the initial Gotchi to sleep
+    await hahaToken.connect(addr1).approve(game.target, sleepCost);
+    await game.connect(addr1).sleep(initialTokenId);
+
+    let gotchi = await game.gotchiStats(initialTokenId);
+    expect(gotchi.isSleeping).to.be.true;
+
+    // Step 2: Advance time by 48 hours to ensure it dies from decay during sleep
+    const twoDaysInSeconds = 48 * 60 * 60;
+    await ethers.provider.send("evm_increaseTime", [twoDaysInSeconds]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Wake the Gotchi to trigger death due to sleep decay
+    await game.connect(addr1).wake(initialTokenId);
+    gotchi = await game.gotchiStats(initialTokenId);
+    expect(gotchi.health).to.equal(0);
+    expect(gotchi.happiness).to.equal(0);
+    expect(gotchi.deathTimestamp).to.be.greaterThan(0); // Death timestamp should be set
+
+    // Step 4: Mint a new Gotchi immediately after burning the dead Gotchi
+    const mintCost = await game.mintCost();
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, initialTokenId);
+
+    // Verify that a new Gotchi is successfully minted with initial stats
+    const newTokenId = 2;
+    let newGotchi = await game.gotchiStats(newTokenId);
+    expect(newGotchi.health).to.equal(80);
+    expect(newGotchi.happiness).to.equal(80);
+    expect(newGotchi.isSleeping).to.be.false;
+
+    // Step 5: Approve and attempt to put the new Gotchi to sleep immediately (no cooldown should apply)
+    await hahaToken.connect(addr1).approve(game.target, sleepCost);
+    await expect(game.connect(addr1).sleep(newTokenId)).to.not.be.reverted;
+
+    // Verify the new Gotchi's sleep state
+    newGotchi = await game.gotchiStats(newTokenId);
+    expect(newGotchi.isSleeping).to.be.true;
+    const currentTimestamp = Number(
+      (await ethers.provider.getBlock("latest")).timestamp
+    );
+    expect(Number(newGotchi.sleepStartTime)).to.equal(currentTimestamp);
+  });
+
+  it("Should prevent sleeping if $HAHA allowance is zero", async function () {
+    const tokenId = 1;
+
+    // Set the $HAHA allowance for sleeping to zero
+    await hahaToken.connect(addr1).approve(game.target, 0);
+
+    // Attempt to put the Gotchi to sleep, expecting a revert due to zero allowance
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "Approval required for sleeping"
+    );
+  });
+
+  it("Should prevent sleeping if $HAHA allowance is insufficient", async function () {
+    const tokenId = 1;
+
+    // Set allowance to a value lower than sleepCost to simulate insufficient allowance
+    const insufficientAllowance = (await game.sleepCost()) - BigInt(1); // Just below sleepCost
+    await hahaToken.connect(addr1).approve(game.target, insufficientAllowance);
+
+    // Attempt to put the Gotchi to sleep with insufficient allowance, expecting a revert
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.revertedWith(
+      "Approval required for sleeping"
+    );
+  });
+
+  it("Should allow sleeping if $HAHA allowance is exactly equal to sleep cost", async function () {
+    const tokenId = 1;
+
+    // Set allowance exactly to sleepCost
+    const sleepCost = await game.sleepCost();
+    await hahaToken.connect(addr1).approve(game.target, sleepCost);
+
+    // Successfully put the Gotchi to sleep
+    await expect(game.connect(addr1).sleep(tokenId)).to.not.be.reverted;
+
+    // Verify the Gotchi's sleep state
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.isSleeping).to.be.true;
+  });
+
+  it("Should only burn the exact sleep cost from balance on successful sleep", async function () {
+    const tokenId = 1;
+
+    // Set allowance higher than sleepCost
+    const sleepCost = await game.sleepCost();
+    const excessAllowance = sleepCost + ethers.parseUnits("1000", 18);
+    await hahaToken.connect(addr1).approve(game.target, excessAllowance);
+
+    // Get the initial balance for comparison after sleeping
+    const initialBalance = await hahaToken.balanceOf(addr1.address);
+
+    // Put the Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Verify that only the sleepCost was deducted
+    const finalBalance = await hahaToken.balanceOf(addr1.address);
+    expect(finalBalance).to.equal(initialBalance - sleepCost);
+
+    // Verify the Gotchi's sleep state
+    const gotchi = await game.gotchiStats(tokenId);
+    expect(gotchi.isSleeping).to.be.true;
+  });
+
+  it("Should prevent sleeping if the user has insufficient $HAHA balance", async function () {
+    const tokenId = 1;
+
+    // Transfer away addr1's $HAHA tokens to simulate insufficient balance
+    const balance = await hahaToken.balanceOf(addr1.address);
+    await hahaToken.connect(addr1).transfer(owner.address, balance);
+
+    // Attempt to put the Gotchi to sleep, expecting a generic revert
+    await expect(game.connect(addr1).sleep(tokenId)).to.be.reverted;
   });
 
   //

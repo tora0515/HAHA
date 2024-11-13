@@ -40,6 +40,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     uint256 public mintCost;
     uint256 public feedCost;
     uint256 public playCost;
+    uint256 public sleepCost;
 
     // Reference to the $HAHA token contract
     IERC20 public hahaToken;
@@ -92,6 +93,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         mintCost = 10_000_000 * 10 ** 18; // Initial mint cost: 100 million $HAHA
         feedCost = 10_000 * 10 ** 18; // Initial feed cost: 10,000 $HAHA
         playCost = 10_000 * 10 ** 18; // Initial play cost: 5,000 $HAHA
+        sleepCost = 25_000 * 10 ** 18; // Initial sleep cost: 25,0000 $HAHA
     }
 
     /**
@@ -413,6 +415,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
 
         require(isAlive(tokenId), "MamaGotchi is dead!");
 
+            // Burn tokens first if all checks pass
+        requireAndBurnTokens(sleepCost, "sleeping");
+
         // Set the sleep state
         gotchi.isSleeping = true;
         gotchi.sleepStartTime = block.timestamp;
@@ -501,6 +506,11 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     function setPlayCost(uint256 newPlayCost) external onlyOwner {
         playCost = newPlayCost;
         emit CostUpdated("PlayCost", newPlayCost);
+    }
+
+    function setSleepCost(uint256 newSleepCost) external onlyOwner {
+        sleepCost = newSleepCost;
+        emit CostUpdated("SleepCost", newSleepCost);
     }
 
     /**
