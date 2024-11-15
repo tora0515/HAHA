@@ -2414,6 +2414,69 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     expect(gotchi.timeAlive).to.equal(0);
   });
 
+  it("Should prevent manualSaveToLeaderboard if cooldown has not expired", async function () {
+    const tokenId = 1;
+
+    // Initial save should succeed and set `lastSaveTime`
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Attempt second save within cooldown period (expect revert)
+    await expect(
+      game.connect(addr1).manualSaveToLeaderboard(tokenId)
+    ).to.be.revertedWith(
+      "MamaGotchi says: I'm too tired to save again so soon!"
+    );
+
+    // Increase time by cooldown duration (10 seconds) to surpass the cooldown
+    await ethers.provider.send("evm_increaseTime", [10]);
+    await ethers.provider.send("evm_mine");
+
+    // Final save should succeed after cooldown
+    await expect(game.connect(addr1).manualSaveToLeaderboard(tokenId)).to.not.be
+      .reverted;
+  });
+
+  it("Should allow manualSaveToLeaderboard after cooldown expires and update leaderboard", async function () {
+    const tokenId = 1;
+
+    // Step 1: Perform initial save to trigger the cooldown
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Step 2: Advance time to exceed the cooldown duration
+    const cooldownDuration = Number((await game.cooldowns()).save); // Fetch cooldown
+    await ethers.provider.send("evm_increaseTime", [cooldownDuration]); // Fast forward
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Perform another save after the cooldown expires
+    await expect(game.connect(addr1).manualSaveToLeaderboard(tokenId)).to.not.be
+      .reverted;
+
+    // Step 4: Retrieve leaderboard score to confirm update
+    const gotchi = await game.gotchiStats(tokenId);
+    const updatedScore = await game.playerHighScores(addr1.address);
+
+    console.log("Leaderboard updated score:", updatedScore.toString());
+
+    // Ensure leaderboard reflects the new `timeAlive` value
+    expect(updatedScore).to.equal(gotchi.timeAlive);
+  });
+
+  it("Should allow manualSaveToLeaderboard after cooldown has expired", async function () {
+    const tokenId = 1;
+
+    // Perform initial save to set lastSaveTime and start the cooldown
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Increase time by exactly the cooldown duration
+    const saveCooldown = await game.cooldowns().then((c) => c.save);
+    await ethers.provider.send("evm_increaseTime", [Number(saveCooldown)]);
+    await ethers.provider.send("evm_mine");
+
+    // Attempt manualSaveToLeaderboard again after cooldown expires
+    await expect(game.connect(addr1).manualSaveToLeaderboard(tokenId)).to.not.be
+      .reverted;
+  });
+
   //
   //
   //

@@ -19,12 +19,14 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         uint256 feed;
         uint256 play;
         uint256 sleep;
+        uint256 save;
     }
 
     GotchiCooldowns public cooldowns = GotchiCooldowns({
         feed: 10 * 60,     // 10-minute cooldown for feeding
         play: 15 * 60,     // 15-minute cooldown for playing
-        sleep: 1 * 60 * 60 // 1-hour cooldown for sleep
+        sleep: 1 * 60 * 60, // 1-hour cooldown for sleep
+        save: 10 // 10-second cooldown for saving scores
     });
 
     // Constants for gameplay mechanics
@@ -60,6 +62,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         uint256 lastSleepTime;
         uint256 lastInteraction;
         uint256 timeAlive; 
+        uint256 lastSaveTime;
     }
 
     // Leaderboard Struct
@@ -174,7 +177,8 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         0,        // lastPlayTime
         0,        // lastSleepTime
         block.timestamp, // lastInteraction
-        0         // timeAlive
+        0,        // timeAlive
+        0         // lastSaveTime
     );
 
     emit GotchiMinted(to, newTokenId);
@@ -474,6 +478,13 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     */
     function manualSaveToLeaderboard(uint256 tokenId) external nonReentrant {
     require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+    Gotchi storage gotchi = gotchiStats[tokenId];
+    
+     // Check cooldown
+    require(
+        block.timestamp >= gotchi.lastSaveTime + cooldowns.save,
+        "MamaGotchi says: I'm too tired to save again so soon!"
+    );
 
     // Check if Gotchi is alive or dead
     if (!isAlive(tokenId)) {
@@ -484,6 +495,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         if (currentTimeAlive > playerHighScores[msg.sender]) {
             playerHighScores[msg.sender] = currentTimeAlive;
             emit LeaderboardUpdated(msg.sender, currentTimeAlive, "AllTimeHighRound");
+            
+               // Update lastSaveTime
+            gotchi.lastSaveTime = block.timestamp;        
         }
 
     } else {
@@ -498,6 +512,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
             playerHighScores[msg.sender] = currentTimeAlive;
             gotchiStats[tokenId].lastInteraction = block.timestamp;
             emit LeaderboardUpdated(msg.sender, currentTimeAlive, "AllTimeHighRound");
+
+               // Update lastSaveTime
+            gotchi.lastSaveTime = block.timestamp;        
         }
     }
     
