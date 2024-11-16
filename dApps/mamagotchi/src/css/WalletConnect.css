@@ -1,0 +1,15 @@
+/* src/css/WalletConnect.css */
+
+/* Button style for "Connect Wallet" */
+.wallet-button {
+  font: inherit;
+}
+
+.wallet-button:hover {
+  font: inherit;
+}
+
+/* Style for connected wallet text */
+.wallet-address {
+  font: inherit;
+}
