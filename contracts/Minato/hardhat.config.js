@@ -27,4 +27,10 @@ module.exports = {
       },
     ],
   },
+
+  paths: {
+    artifacts: "./artifacts", // Output path for compiled contracts
+    sources: "./contracts", // Path to your Solidity contracts
+    cache: "./cache", // Path for cached builds
+  },
 };
