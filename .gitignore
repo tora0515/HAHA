@@ -113,3 +113,6 @@ Thumbs.db
 
 # VS Code settings
 .vscode/
+
+# ABI file
+dApps/mamagotchi/src/MamaGotchiGameMinato_ABI.json
