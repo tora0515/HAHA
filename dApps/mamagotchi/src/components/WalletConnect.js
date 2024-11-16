@@ -5,6 +5,17 @@ import MamaGotchiABI from '../MamaGotchiGameMinato_ABI.json'; // ABI import
 
 const contractAddress = '0x246A74Ad5848640cb6bBe516DEAD50F7ED407030'; // Contract address
 
+// Helper function to format seconds into DD:HH:MM:SS
+const formatTime = (seconds) => {
+  const days = Math.floor(seconds / (24 * 3600));
+  seconds %= 24 * 3600;
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${days}d ${hours}h ${minutes}m ${secs}s`;
+};
+
 const WalletConnect = () => {
   const [walletAddress, setWalletAddress] = useState(null);
   const [contract, setContract] = useState(null);
@@ -61,19 +72,27 @@ const WalletConnect = () => {
       const isAlive = await gameContract.isAlive(tokenId);
       const gotchiStats = await gameContract.gotchiStats(tokenId);
 
-      // Return all the stats from the struct
+      // Format time-related fields
       return {
         isAlive,
         health: gotchiStats.health.toString(),
         happiness: gotchiStats.happiness.toString(),
-        timeAlive: gotchiStats.timeAlive.toString(),
+        timeAlive: formatTime(parseInt(gotchiStats.timeAlive.toString())),
         isSleeping: gotchiStats.isSleeping,
-        sleepStartTime: gotchiStats.sleepStartTime.toString(),
-        lastFeedTime: gotchiStats.lastFeedTime.toString(),
-        lastPlayTime: gotchiStats.lastPlayTime.toString(),
-        lastSleepTime: gotchiStats.lastSleepTime.toString(),
-        lastInteraction: gotchiStats.lastInteraction.toString(),
-        deathTimestamp: gotchiStats.deathTimestamp.toString(),
+        sleepStartTime: formatTime(
+          parseInt(gotchiStats.sleepStartTime.toString())
+        ),
+        lastFeedTime: formatTime(parseInt(gotchiStats.lastFeedTime.toString())),
+        lastPlayTime: formatTime(parseInt(gotchiStats.lastPlayTime.toString())),
+        lastSleepTime: formatTime(
+          parseInt(gotchiStats.lastSleepTime.toString())
+        ),
+        lastInteraction: formatTime(
+          parseInt(gotchiStats.lastInteraction.toString())
+        ),
+        deathTimestamp: formatTime(
+          parseInt(gotchiStats.deathTimestamp.toString())
+        ),
       };
     } catch (error) {
       console.error('Error fetching Gotchi data:', error);
@@ -111,7 +130,7 @@ const WalletConnect = () => {
           <p>Is Alive: {gotchiData.isAlive ? 'Yes' : 'No'}</p>
           <p>Health: {gotchiData.health || 'N/A'}</p>
           <p>Happiness: {gotchiData.happiness || 'N/A'}</p>
-          <p>Time Alive: {gotchiData.timeAlive || 'N/A'} seconds</p>
+          <p>Time Alive: {gotchiData.timeAlive || 'N/A'}</p>
           <p>Is Sleeping: {gotchiData.isSleeping ? 'Yes' : 'No'}</p>
           {/* Add other stats here if needed */}
         </div>
