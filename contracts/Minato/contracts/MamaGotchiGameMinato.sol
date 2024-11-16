@@ -72,16 +72,32 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     // Event definitions
-    event GotchiMinted(address indexed player, uint256 tokenId);
-    event GotchiFed(address indexed player, uint256 tokenId);
-    event GotchiPlayed(address indexed player, uint256 tokenId);
-    event GotchiSleeping(address indexed player, uint256 tokenId, uint256 sleepStartTime);
-    event GotchiAwake(address indexed player, uint256 tokenId, uint256 healthDecay, uint256 happinessDecay);
+event FreshMintInitiated(address indexed player, uint256 tokenIdToBurn);
+event GotchiBurned(address indexed player, uint256 tokenId);
+event InsufficientHAHA(address indexed player, uint256 requiredAmount, uint256 currentBalance);
+event BurnApprovalRequired(address indexed player, uint256 requiredAmount, uint256 currentAllowance);
+event GotchiMinted(address indexed player, uint256 indexed tokenId, uint256 health, uint256 happiness, uint256 timeAlive);
+
+    event GotchiFed(address indexed player, uint256 tokenId, uint256 newHealth, uint256 newHappiness, uint256 newTimeAlive);
+    event GotchiPlayed(address indexed player, uint256 tokenId, uint256 newHealth, uint256 newHappiness, uint256 newTimeAlive);
+    
+    event GotchiSleeping(address indexed player, uint256 tokenId, uint256 sleepStartTime, uint256 health, uint256 happiness, uint256 timeAlive);
+
+    event GotchiAwake(address indexed player, uint256 tokenId, uint256 health, uint256 happiness, uint256 timeAlive, uint256 wakeTimestamp);
+
+
+
+
     event GotchiDied(address indexed player, uint256 tokenId);
     event LeaderboardUpdated(address indexed player, uint256 newScore, string leaderboardType);
+
+event GotchiStatus(address indexed player, uint256 tokenId, string status, uint256 timeAlive, uint256 health, uint256 happiness);
+
+    
     event CostUpdated(string costType, uint256 newValue);
     event DecayCalculated(uint256 healthDecay, uint256 happinessDecay);
-   
+
+
     /**
     * @dev Contract constructor, sets the initial owner and initializes the $HAHA token contract address.
     * Defines initial costs for minting, feeding, and playing actions.
@@ -132,32 +148,32 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         return super._update(to, tokenId, auth);
     }
 
-    /**
-    * @dev Mints a new MamaGotchi NFT for a specified address, burning an existing token if provided.
-    * Requires approval for minting cost in $HAHA tokens.
-    * Initializes the Gotchi with default attributes and emits GotchiMinted event.
-    * @param to The address to receive the newly minted MamaGotchi.
-    * @param tokenIdToBurn Optional: ID of the MamaGotchi to burn (0 if no token is burned).
-    */
-    function mintNewGotchi(address to, uint256 tokenIdToBurn) external nonReentrant {
+ /**
+ * @dev Mints a new MamaGotchi NFT for a specified address, burning an existing token if provided.
+ * Requires approval for minting cost in $HAHA tokens.
+ * Emits events for key steps like token burning, minting, and failure reasons.
+ * @param to The address to receive the newly minted MamaGotchi.
+ * @param tokenIdToBurn Optional: ID of the MamaGotchi to burn (0 if no token is burned).
+ */
+function mintNewGotchi(address to, uint256 tokenIdToBurn) external nonReentrant {
     // Check if the player owns a Gotchi
     if (balanceOf(msg.sender) > 0) {
-         require(tokenIdToBurn != 0, "You already own a MamaGotchi! Burn it first to mint a new one.");
-        // Verify ownership of the specified Gotchi and update its time alive
+        require(tokenIdToBurn != 0, "You already own a MamaGotchi! Burn it first to mint a new one.");
         require(ownerOf(tokenIdToBurn) == msg.sender, "Not your MamaGotchi");
+        emit FreshMintInitiated(msg.sender, tokenIdToBurn);
 
-        // Update time alive to ensure the Gotchi’s status is current
+        // Update status and ensure Gotchi is dead before burning
         updateTimeAlive(tokenIdToBurn);
-        // Check if the Gotchi is dead before allowing the burn
         require(!isAlive(tokenIdToBurn), "MamaGotchi still lives! Be a Good Kid and treat her well!");
 
-        // Burn the Gotchi if dead
+         // Save to leaderboard before burning
+    _saveToLeaderboard(tokenIdToBurn);
+
         _burn(tokenIdToBurn);
+        emit GotchiBurned(msg.sender, tokenIdToBurn);
     }
 
-    require(tokenIdToBurn != 0, "You already own a MamaGotchi! Burn it first to mint a new one.");
-
-    // Ensure the player has sufficient $HAHA tokens and has approved the mint cost
+    // Ensure the player has sufficient $HAHA tokens for minting
     require(hahaToken.balanceOf(msg.sender) >= mintCost, "Insufficient $HAHA balance for minting");
     require(hahaToken.allowance(msg.sender, address(this)) >= mintCost, "Approval required for minting");
 
@@ -165,8 +181,10 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     ERC20Burnable(address(hahaToken)).burnFrom(msg.sender, mintCost);
 
     // Mint a new Gotchi for the player with initial stats
-    uint256 newTokenId = _nextTokenId++;
+    uint256 newTokenId = _nextTokenId;
     _safeMint(to, newTokenId);
+    _nextTokenId++;
+
     gotchiStats[newTokenId] = Gotchi(
         80,       // health
         80,       // happiness
@@ -181,7 +199,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         0         // lastSaveTime
     );
 
-    emit GotchiMinted(to, newTokenId);
+    emit GotchiMinted(to, newTokenId, gotchiStats[newTokenId].health, gotchiStats[newTokenId].happiness, gotchiStats[newTokenId].timeAlive);
 }
 
 
@@ -347,136 +365,190 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
 
     /**
     * @dev Feeds a MamaGotchi, increasing its health if cooldown has elapsed and it is not asleep.
-    * Deducts $HAHA tokens, updates `timeAlive`, and emits GotchiFed event.
+    * This function also updates `timeAlive` and applies any necessary health and happiness decay.
+    * Emits events to inform the UI about the updated health, happiness, and timeAlive stats.
+    *
+    * Requirements:
+    * - The caller must own the specified MamaGotchi (`Not your MamaGotchi`).
+    * - The MamaGotchi must be alive (`MamaGotchi is dead!`).
+    * - The MamaGotchi must not be asleep (`MamaGotchi is asleep!`).
+    * - The cooldown period for feeding must have elapsed (`MamaGotchi says: I'm full!`).
+    * - The caller must have sufficient $HAHA tokens approved and available for feeding.
+    *
+    * Emits:
+    * - `GotchiFed` with updated health, happiness, and timeAlive stats.
+    * - `InsufficientHAHA` if the caller's $HAHA balance is insufficient.
+    * - `BurnApprovalRequired` if the caller has not approved enough $HAHA tokens for the contract.
+    *
     * @param tokenId The ID of the MamaGotchi being fed.
     */
-    function feed(uint256 tokenId) external nonReentrant {
+   function feed(uint256 tokenId) external nonReentrant {
     Gotchi storage gotchi = gotchiStats[tokenId];
 
-    // Initial validation checks
     require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-    require(isAlive(tokenId), "MamaGotchi is dead!"); // Ensure the Gotchi is initially alive
-    require(!gotchi.isSleeping, "MamaGotchi is asleep!");
 
+    // Pre-existing state validation (no emits here)
+    require(isAlive(tokenId), "MamaGotchi is dead!");
+    require(!gotchi.isSleeping, "MamaGotchi is asleep!");
     require(block.timestamp >= gotchi.lastFeedTime + cooldowns.feed, "MamaGotchi says: I'm full!");
+
+    // State change: apply decay and update timeAlive
+    updateTimeAlive(tokenId);
+
+    // Post-decay validation (emit for state change)
+    if (!isAlive(tokenId)) {
+        emit GotchiDied(ownerOf(tokenId), tokenId);
+        return;
+    }
+
+    // Burn tokens only after confirming Gotchi is alive post-decay
+    requireAndBurnTokens(feedCost, "feeding");
+
+    // State change: apply health boost and update feed time
+    gotchi.health = gotchi.health + feedHealthBoost > MAX_HEALTH ? MAX_HEALTH : gotchi.health + feedHealthBoost;
+    gotchi.lastFeedTime = block.timestamp;
+
+    // Emit updated health stats (state change)
+    emit GotchiFed(msg.sender, tokenId, gotchi.health, gotchi.happiness, gotchi.timeAlive);
+
+}
+   /**
+ * @dev Plays with a MamaGotchi, increasing its happiness if cooldown has elapsed and it is not asleep.
+ * Updates `timeAlive` and applies necessary health and happiness decay. Emits events to inform the UI
+ * about state changes following gameplay interactions.
+ *
+ * Requirements:
+ * - The caller must own the specified MamaGotchi (`Not your MamaGotchi`).
+ * - The MamaGotchi must be alive (`MamaGotchi is dead!`).
+ * - The MamaGotchi must not be asleep (`MamaGotchi is asleep!`).
+ * - The cooldown period for playing must have elapsed (`MamaGotchi says: I'm tired now!`).
+ * - The caller must have sufficient $HAHA tokens approved and available for playing.
+ *
+ * Emits:
+ * - `GotchiPlayed` with updated health, happiness, and timeAlive stats if the action is successful.
+ * - `GotchiDied` if the Gotchi dies during post-decay validation.
+ *
+ * @param tokenId The ID of the MamaGotchi being played with.
+ */
+function play(uint256 tokenId) external nonReentrant {
+    Gotchi storage gotchi = gotchiStats[tokenId];
+
+    // Initial validation checks (no state change yet)
+    require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+    require(isAlive(tokenId), "MamaGotchi is dead!"); // No state change, so remain `require`
+    require(!gotchi.isSleeping, "MamaGotchi is asleep!"); // No state change, so remain `require`
+    require(block.timestamp >= gotchi.lastPlayTime + cooldowns.play, "MamaGotchi says: I'm tired now!");
 
     // Update timeAlive and apply any decay
     updateTimeAlive(tokenId);
 
     // Post-decay validation check
-    require(isAlive(tokenId), "MamaGotchi is dead!");
+    if (!isAlive(tokenId)) {
+        emit GotchiDied(ownerOf(tokenId), tokenId); // Emit because this is a state change
+        return;
+    }
 
     // Burn tokens only after confirming Gotchi is alive post-decay
-    requireAndBurnTokens(feedCost, "feeding");
+    requireAndBurnTokens(playCost, "playing");
 
-    // Apply health boost and update feed time
-    gotchi.health = gotchi.health + feedHealthBoost > MAX_HEALTH ? MAX_HEALTH : gotchi.health + feedHealthBoost;
-    gotchi.lastFeedTime = block.timestamp;
-    
-    emit GotchiFed(msg.sender, tokenId);
+    // Apply the play boost to happiness
+    gotchi.happiness = gotchi.happiness + playHappinessBoost > MAX_HAPPINESS ? MAX_HAPPINESS : gotchi.happiness + playHappinessBoost;
+    gotchi.lastPlayTime = block.timestamp;
+
+    // Emit event with updated stats (health, happiness, and timeAlive)
+    emit GotchiPlayed(msg.sender, tokenId, gotchi.health, gotchi.happiness, gotchi.timeAlive);
 }
 
 
+     /**
+ * @dev Puts a MamaGotchi to sleep, pausing decay, if cooldown has elapsed and it is not already sleeping.
+ * Updates `timeAlive` and applies necessary health and happiness decay.
+ *
+ * Requirements:
+ * - The caller must own the specified MamaGotchi (`Not your MamaGotchi`).
+ * - The MamaGotchi must be alive (`MamaGotchi is dead!`).
+ * - The MamaGotchi must not be already sleeping (`MamaGotchi says: I'm already in dreamland, shhh!`).
+ * - The cooldown period for sleeping must have elapsed (`MamaGotchi says: I'm not sleepy!`).
+ * - The caller must have sufficient $HAHA tokens approved and available for sleeping.
+ *
+ * Emits:
+ * - `GotchiSleeping` with updated health, happiness, timeAlive, and sleep start time if the action is successful.
+ * - `GotchiDied` if the Gotchi dies during post-decay validation.
+ *
+ * @param tokenId The ID of the MamaGotchi to put to sleep.
+ */
+function sleep(uint256 tokenId) external nonReentrant {
+    Gotchi storage gotchi = gotchiStats[tokenId];
 
-    /**
-    * @dev Plays with a MamaGotchi, increasing its happiness if cooldown has elapsed and it is not asleep.
-    * Deducts $HAHA tokens, updates `timeAlive`, and emits GotchiPlayed event.
-    * @param tokenId The ID of the MamaGotchi to play with.
-    */
-    function play(uint256 tokenId) external nonReentrant {
-        Gotchi storage gotchi = gotchiStats[tokenId];
+    // Initial validation checks (no state change yet)
+    require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+    require(isAlive(tokenId), "MamaGotchi is dead!"); // No state change, so remain `require`
+    require(!gotchi.isSleeping, "MamaGotchi says: I'm already in dreamland, shhh!");
+    require(block.timestamp >= gotchi.lastSleepTime + cooldowns.sleep, "MamaGotchi says: I'm not sleepy!");
 
-        require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-        require(isAlive(tokenId), "MamaGotchi is dead!"); // Ensure the Gotchi is alive
-        require(!gotchi.isSleeping, "MamaGotchi is asleep!");
-        require(block.timestamp >= gotchi.lastPlayTime + cooldowns.play, "MamaGotchi says: I'm tired now!");
-
-       
-         // Update timeAlive and apply any decay
+    // Update timeAlive and apply any decay
     updateTimeAlive(tokenId);
 
     // Post-decay validation check
-    require(isAlive(tokenId), "MamaGotchi is dead!");
-
-             // Burn tokens first if all checks pass
-        requireAndBurnTokens(playCost, "playing");
-
-            // Apply the play boost to happiness
-            gotchi.happiness = gotchi.happiness + playHappinessBoost > MAX_HAPPINESS ? MAX_HAPPINESS : gotchi.happiness + playHappinessBoost;
-            gotchi.lastPlayTime = block.timestamp;
-    
-
-        emit GotchiPlayed(msg.sender, tokenId);
+    if (!isAlive(tokenId)) {
+        emit GotchiDied(ownerOf(tokenId), tokenId); // Emit because this is a state change
+        return;
     }
 
-     /**
-    * @dev Puts a MamaGotchi to sleep, pausing decay, if cooldown has elapsed and it is not already sleeping.
-    * This method applies a cooldown period after which sleep can be initiated again, and sets the sleep state,
-    * starting time, and other necessary flags.
-    * @param tokenId The ID of the MamaGotchi to put to sleep.
-    */
-    function sleep(uint256 tokenId) external nonReentrant {
-        Gotchi storage gotchi = gotchiStats[tokenId];
+    // Burn tokens only after confirming Gotchi is alive post-decay
+    requireAndBurnTokens(sleepCost, "sleeping");
 
-        require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-        require(isAlive(tokenId), "MamaGotchi is dead!");
-        require(block.timestamp >= gotchi.lastSleepTime + cooldowns.sleep, "MamaGotchi says: I'm not sleepy!");
-        require(!gotchi.isSleeping, "MamaGotchi says: I'm already in dreamland, shhh!");
-        
+    // Set the sleep state
+    gotchi.isSleeping = true;
+    gotchi.sleepStartTime = block.timestamp;
+    gotchi.lastSleepTime = block.timestamp; // Always update lastSleepTime on initiating sleep
 
-        updateTimeAlive(tokenId); // Update timeAlive and lastInteraction
+    // Emit event with updated stats (health, happiness, timeAlive, and sleep start time)
+    emit GotchiSleeping(msg.sender, tokenId, block.timestamp, gotchi.health, gotchi.happiness, gotchi.timeAlive);
+}
 
-        require(isAlive(tokenId), "MamaGotchi is dead!");
-
-            // Burn tokens first if all checks pass
-        requireAndBurnTokens(sleepCost, "sleeping");
-
-        // Set the sleep state
-        gotchi.isSleeping = true;
-        gotchi.sleepStartTime = block.timestamp;
-        gotchi.lastSleepTime = block.timestamp; // Always update lastSleepTime on initiating sleep
-
-
-        emit GotchiSleeping(msg.sender, tokenId, block.timestamp);
-    }
 
     /**
-    * @dev Wakes a MamaGotchi, checking if it survived the sleep period based on health and happiness decay.
-    * If death occurs during sleep, sets death timestamp and marks as no longer sleeping. If the Gotchi survives,
-    * simply updates its awake state. This method does not have a cooldown, allowing users to wake a Gotchi
-    * from sleep at any time.
-    * @param tokenId The ID of the MamaGotchi to wake up.
-    */
-    function wake(uint256 tokenId) external nonReentrant {
-        Gotchi storage gotchi = gotchiStats[tokenId];
-        require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
-        require(gotchi.isSleeping, "MamaGotchi says: I'm already awake!");
+ * @dev Wakes a MamaGotchi, checking if it survived the sleep period based on health and happiness decay.
+ * If death occurs during sleep, sets death timestamp and marks as no longer sleeping. If the Gotchi survives,
+ * simply updates its awake state.
+ * @param tokenId The ID of the MamaGotchi to wake up.
+ */
+function wake(uint256 tokenId) external nonReentrant {
+    Gotchi storage gotchi = gotchiStats[tokenId];
+    
+    // Initial state checks
+    require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
+    require(gotchi.isSleeping, "MamaGotchi says: I'm already awake!");
+    
+    // Apply time decay up to this moment and update stats
+    updateTimeAlive(tokenId);
 
-        // Apply time decay up to this moment
-        updateTimeAlive(tokenId);
+    // Check if Gotchi died during sleep after applying decay
+    if (!isAlive(tokenId)) {
+        gotchi.isSleeping = false; // Reset sleep state
+        gotchi.deathTimestamp = block.timestamp; // Mark death timestamp
 
-        // Check if Gotchi died during sleep after applying decay
-        if (gotchi.health == 0 || gotchi.happiness == 0) {
-            gotchi.isSleeping = false; // Reset sleep state
-            gotchi.deathTimestamp = block.timestamp; // Mark death timestamp
-            emit GotchiDied(ownerOf(tokenId), tokenId);
-            return;
-        }
-
-        // Reset the sleep state
-        gotchi.isSleeping = false;
-        gotchi.sleepStartTime = 0;
-
-        emit GotchiAwake(msg.sender, tokenId, 0, 0); // Emit wake event
+        emit GotchiDied(ownerOf(tokenId), tokenId); // Notify the UI of death
+        return;
     }
+
+    // Reset the sleep state if the Gotchi survived
+    gotchi.isSleeping = false;
+    gotchi.sleepStartTime = 0;
+
+    // Emit the wake event with updated stats
+    emit GotchiAwake(msg.sender, tokenId, gotchi.health, gotchi.happiness, gotchi.timeAlive, block.timestamp);
+}
+
    
-     /**
-    * @dev Manually saves the current `timeAlive` to the player's high score if it exceeds the previous score.
-    * Updates the leaderboard and resets `lastInteraction` timestamp.
-    * Emits LeaderboardUpdated event if the score is updated.
-    * @param tokenId The ID of the MamaGotchi.
-    */
-    function manualSaveToLeaderboard(uint256 tokenId) external nonReentrant {
+    /**
+ * @dev Manually saves the current `timeAlive` to the player's high score if it exceeds the previous score.
+ * Updates the leaderboard and resets `lastInteraction` timestamp.
+ * Emits events to signal leaderboard updates or status changes.
+ * @param tokenId The ID of the MamaGotchi.
+ */
+    function _saveToLeaderboard(uint256 tokenId) internal {
     require(ownerOf(tokenId) == msg.sender, "Not your MamaGotchi");
     Gotchi storage gotchi = gotchiStats[tokenId];
     
@@ -489,7 +561,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     // Check if Gotchi is alive or dead
     if (!isAlive(tokenId)) {
         // Gotchi is dead, use existing timeAlive value directly
-        uint256 currentTimeAlive = gotchiStats[tokenId].timeAlive;
+        uint256 currentTimeAlive = gotchi.timeAlive;
 
         // Update leaderboard if this is the highest timeAlive score for the player
         if (currentTimeAlive > playerHighScores[msg.sender]) {
@@ -500,28 +572,36 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
             gotchi.lastSaveTime = block.timestamp;        
         }
 
+        emit GotchiStatus(msg.sender, tokenId, "Dead", currentTimeAlive, 0, 0);
+    
     } else {
         // Gotchi is alive, so we need to update timeAlive to ensure it's current
         updateTimeAlive(tokenId);
 
         // After updating, retrieve the latest timeAlive value
-        uint256 currentTimeAlive = gotchiStats[tokenId].timeAlive;
+        uint256 currentTimeAlive = gotchi.timeAlive;
 
         // Update leaderboard if this is the highest timeAlive score for the player
         if (currentTimeAlive > playerHighScores[msg.sender]) {
             playerHighScores[msg.sender] = currentTimeAlive;
-            gotchiStats[tokenId].lastInteraction = block.timestamp;
+            gotchi.lastInteraction = block.timestamp;
             emit LeaderboardUpdated(msg.sender, currentTimeAlive, "AllTimeHighRound");
 
                // Update lastSaveTime
             gotchi.lastSaveTime = block.timestamp;        
         }
+
+        emit GotchiStatus(msg.sender, tokenId, "Alive", currentTimeAlive, gotchi.health, gotchi.happiness);
     }
     
     // If the Gotchi just died due to the update, emit a death event
-    if (!isAlive(tokenId) && gotchiStats[tokenId].deathTimestamp == block.timestamp) {
+    if (!isAlive(tokenId) && gotchi.deathTimestamp == block.timestamp) {
         emit GotchiDied(msg.sender, tokenId);
     }
+}
+
+function manualSaveToLeaderboard(uint256 tokenId) external nonReentrant {
+    _saveToLeaderboard(tokenId);
 }
 
 
