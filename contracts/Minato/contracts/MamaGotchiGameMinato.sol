@@ -313,24 +313,30 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         } else {
             // Handle regular decay outside of sleep
             uint256 elapsedTime = block.timestamp - gotchi.lastInteraction;
+
             decayHealth = calculateHealthDecay(elapsedTime);
             decayHappiness = calculateHappinessDecay(elapsedTime);
 
-            gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
-            gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
+              // Determine if Gotchi dies during this decay
+        if (decayHealth >= gotchi.health || decayHappiness >= gotchi.happiness) {
+            uint256 timeUntilDeath = calculateTimeUntilDeath(tokenId);
 
-            if (gotchi.health == 0 || gotchi.happiness == 0) {
-                uint256 timeUntilDeath = calculateTimeUntilDeath(tokenId);
-                gotchi.timeAlive += timeUntilDeath;
-                gotchi.deathTimestamp = block.timestamp - (elapsedTime - timeUntilDeath);
-                emit GotchiDied(ownerOf(tokenId), tokenId);
-                return;
-            }
+            // Update timeAlive and mark death
+            gotchi.timeAlive += timeUntilDeath;
+            gotchi.deathTimestamp = block.timestamp - (elapsedTime - timeUntilDeath);
 
-            gotchi.timeAlive += elapsedTime;
-            gotchi.lastInteraction = block.timestamp;
+            emit GotchiDied(ownerOf(tokenId), tokenId);
+            return; // Exit after handling death
         }
+
+        // Apply decay and update stats if Gotchi survives
+        gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
+        gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
+        gotchi.timeAlive += elapsedTime;
+
+        gotchi.lastInteraction = block.timestamp;
     }
+}
 
     /**
     * @dev Internal function to burn $HAHA tokens for a specific gameplay action.

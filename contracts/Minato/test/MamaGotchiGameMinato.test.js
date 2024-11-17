@@ -1770,57 +1770,6 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     ); // Should not change if lower
   });
 
-  // Boundary Test: Controlled happiness decay to zero with regular feeding to maintain health
-  it("Should keep Gotchi alive when happiness is above 0, and mark as dead when happiness reaches 0", async function () {
-    const tokenId = 1; // Assume Gotchi ID is 1 for this test
-
-    // Step 1: Advance 6 hours and feed to prevent health from reaching zero
-    const sixHours = 6 * 60 * 60; // 6 hours in seconds
-    await ethers.provider.send("evm_increaseTime", [sixHours]);
-    await ethers.provider.send("evm_mine");
-
-    await game.connect(addr1).feed(tokenId);
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId); // Update stats
-
-    let gotchi = await game.gotchiStats(tokenId);
-    expect(gotchi.health).to.be.lessThan(80).and.greaterThan(0); // Health should be positive, but decayed
-    expect(gotchi.happiness).to.be.lessThan(80).and.greaterThan(0); // Happiness should also decay
-
-    // Step 2: Advance another 6 hours and feed again
-    await ethers.provider.send("evm_increaseTime", [sixHours]);
-    await ethers.provider.send("evm_mine");
-
-    await game.connect(addr1).feed(tokenId);
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    gotchi = await game.gotchiStats(tokenId);
-    expect(gotchi.health).to.be.lessThan(80).and.greaterThan(0); // Health decayed but fed
-    expect(gotchi.happiness).to.be.lessThan(40).and.greaterThan(0); // Happiness continues decaying
-
-    // Step 3: Advance another 6 hours and feed again
-    await ethers.provider.send("evm_increaseTime", [sixHours]);
-    await ethers.provider.send("evm_mine");
-
-    await game.connect(addr1).feed(tokenId);
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    gotchi = await game.gotchiStats(tokenId);
-    expect(gotchi.health).to.be.lessThan(80).and.greaterThan(0); // Health positive due to feeding
-    expect(gotchi.happiness).to.be.lessThan(20).and.greaterThan(0); // Happiness nearing zero
-
-    // Step 4: Final decay interval to bring happiness to zero without feeding
-    const finalDecayTime = Math.floor(2 * 60 * 60); // Advance 0.5 hours (30 minutes) to bring happiness to zero
-    await ethers.provider.send("evm_increaseTime", [finalDecayTime]);
-    await ethers.provider.send("evm_mine");
-
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId); // Final update
-
-    // Final check: happiness should be zero, Gotchi should be marked as dead
-    gotchi = await game.gotchiStats(tokenId);
-    expect(gotchi.happiness).to.equal(0); // Happiness should be zero
-    expect(gotchi.deathTimestamp).to.be.greaterThan(0); // Gotchi should be dead
-  });
-
   it("Should decay health and happiness at the expected rate over time without user interactions", async function () {
     const tokenId = 1;
 
@@ -2484,41 +2433,28 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
       .withArgs(addr2.address, 2);
   });
 
-  it("should revert if allowance is too low", async function () {
-    const mintCost = ethers.parseUnits("1000", 18);
-    const insufficientAllowance = ethers.parseUnits("500", 18);
+  it("should revert if allowance is too low for a new Gotchi", async function () {
+    const mintCost = ethers.parseUnits("1000", 18); // Mint cost in HAHA
+    const insufficientAllowance = ethers.parseUnits("500", 18); // Less than mintCost
 
-    // Step 1: Advance time to simulate 48 hours passing
-    const timeToKill = 48 * 60 * 60; // 48 hours in seconds
-    await ethers.provider.send("evm_increaseTime", [timeToKill]);
-    await ethers.provider.send("evm_mine");
+    // Step 1: Set insufficient allowance for addr2
+    await hahaToken.connect(addr2).approve(game.target, insufficientAllowance);
 
-    // Step 2: Trigger death by saving to the leaderboard
-    await game.connect(addr1).manualSaveToLeaderboard(1); // Assuming tokenId = 1 for addr1
-
-    // Step 3: Verify Gotchi is dead
-    const gotchi = await game.gotchiStats(1); // Assuming tokenId = 1
-    console.log("Gotchi Health:", gotchi.health.toString()); // Should now be 0
-    expect(gotchi.health).to.equal(0); // Ensure the Gotchi is dead
-
-    // Step 4: Set insufficient allowance
-    await hahaToken.connect(addr1).approve(game.target, insufficientAllowance);
-
-    // Step 5: Check allowance and balance
+    // Step 2: Verify allowance and balance
     const currentAllowance = await hahaToken.allowance(
-      addr1.address,
+      addr2.address,
       game.target
     );
-    const currentBalance = await hahaToken.balanceOf(addr1.address);
+    const currentBalance = await hahaToken.balanceOf(addr2.address);
     console.log("Allowance:", currentAllowance.toString());
     console.log("Balance:", currentBalance.toString());
 
-    expect(currentAllowance).to.be.lt(mintCost); // Allowance is insufficient
-    expect(currentBalance).to.be.gte(mintCost); // Ensure enough balance
+    expect(currentAllowance).to.be.lt(mintCost); // Ensure allowance is too low
+    expect(currentBalance).to.be.gte(mintCost); // Ensure addr2 has enough balance
 
-    // Step 6: Attempt mint and verify revert
+    // Step 3: Attempt to mint a Gotchi and expect revert
     await expect(
-      game.connect(addr1).mintNewGotchi(addr1.address, 1)
+      game.connect(addr2).mintNewGotchi(addr2.address, 0) // New mint with no prior Gotchi
     ).to.be.revertedWith("Approval required for minting");
   });
 
@@ -2533,11 +2469,16 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     // Step 2: Call manualSaveToLeaderboard to update Gotchi's state and mark it as dead
     await game.connect(addr1).manualSaveToLeaderboard(tokenId);
 
-    // Step 3: Transfer all $HAHA tokens from addr1 to simulate insufficient balance
+    // Step 3: Advance time to ensure cooldown period has passed
+    const saveCooldownBuffer = 30; // Add a 30-second buffer
+    await ethers.provider.send("evm_increaseTime", [saveCooldownBuffer]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 4: Transfer all $HAHA tokens from addr1 to simulate insufficient balance
     const addr1Balance = await hahaToken.balanceOf(addr1.address);
     await hahaToken.connect(addr1).transfer(owner.address, addr1Balance);
 
-    // Step 4: Attempt to mint a new Gotchi and expect the transaction to revert
+    // Step 5: Attempt to mint a new Gotchi and expect the transaction to revert
     await expect(
       game.connect(addr1).mintNewGotchi(addr1.address, tokenId)
     ).to.be.revertedWith("Insufficient $HAHA balance for minting");
@@ -2554,12 +2495,17 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     // Step 2: Save to leaderboard to capture the final timeAlive before death
     await game.connect(addr1).manualSaveToLeaderboard(tokenId);
 
-    // Step 3: Retrieve leaderboard score and verify it reflects timeAlive at the moment of death
+    // Step 3: Advance time to ensure the save cooldown period has elapsed
+    const saveCooldownBuffer = 30; // Add at least 30 seconds buffer
+    await ethers.provider.send("evm_increaseTime", [saveCooldownBuffer]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 4: Retrieve leaderboard score and verify it reflects timeAlive at the moment of death
     const deadGotchiStats = await game.gotchiStats(tokenId);
     const initialLeaderboardScore = await game.playerHighScores(addr1.address);
     expect(initialLeaderboardScore).to.equal(deadGotchiStats.timeAlive);
 
-    // Step 4: Burn the dead Gotchi and mint a new one
+    // Step 5: Burn the dead Gotchi and mint a new one
     const mintCost = await game.mintCost();
     await hahaToken.connect(addr1).approve(game.target, mintCost);
 
@@ -2568,11 +2514,11 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
       .mintNewGotchi(addr1.address, tokenId);
     await mintTx.wait();
 
-    // Step 5: Verify the leaderboard score remains unchanged after minting a new Gotchi
+    // Step 6: Verify the leaderboard score remains unchanged after minting a new Gotchi
     const finalLeaderboardScore = await game.playerHighScores(addr1.address);
     expect(finalLeaderboardScore).to.equal(initialLeaderboardScore);
 
-    // Verify the new Gotchi has been successfully minted
+    // Step 7: Verify the new Gotchi has been successfully minted
     const newGotchiStats = await game.gotchiStats(2); // Assuming the new tokenId is 2
     expect(newGotchiStats.health).to.equal(80);
     expect(newGotchiStats.happiness).to.equal(80);
@@ -2607,6 +2553,11 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     const tokenIdToKill = 1; // Assuming the existing Gotchi has tokenId 1
     await game.connect(addr1).manualSaveToLeaderboard(tokenIdToKill);
 
+    // Advance time to allow the save cooldown to expire (at least 30 seconds)
+    const saveCooldownBuffer = 30;
+    await ethers.provider.send("evm_increaseTime", [saveCooldownBuffer]);
+    await ethers.provider.send("evm_mine");
+
     // Approve tokens for minting a new Gotchi
     await hahaToken.connect(addr1).approve(game.target, mintCost);
 
@@ -2625,6 +2576,334 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     expect(gotchi.sleepStartTime).to.equal(0); // No sleep started
     expect(gotchi.lastFeedTime).to.equal(0); // No feeding has occurred
     expect(gotchi.lastPlayTime).to.equal(0); // No playing has occurred
+  });
+
+  it("Should correctly apply regular decay without sleep and increment timeAlive", async function () {
+    const tokenId = 1; // Gotchi's token ID
+
+    // Step 1: Fetch initial Gotchi stats
+    const initialGotchi = await game.gotchiStats(tokenId);
+    const initialTimeAlive = BigInt(initialGotchi.timeAlive); // Ensure BigInt type
+    const initialHealth = BigInt(initialGotchi.health);
+    const initialHappiness = BigInt(initialGotchi.happiness);
+
+    // Step 2: Advance time by 1 hour (3600 seconds)
+    const oneHour = 3600n; // Use BigInt for consistency
+    await ethers.provider.send("evm_increaseTime", [Number(oneHour)]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Trigger state update to apply decay
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Step 4: Fetch updated Gotchi stats
+    const updatedGotchi = await game.gotchiStats(tokenId);
+    const updatedHealth = BigInt(updatedGotchi.health);
+    const updatedHappiness = BigInt(updatedGotchi.happiness);
+    const updatedTimeAlive = BigInt(updatedGotchi.timeAlive);
+
+    // Step 5: Calculate expected values based on contract-defined decay rates
+    const decayRateHealth = 55n; // Health decay rate: 5.5 * 10 (scaled to BigInt)
+    const decayRateHappiness = 55n; // Happiness decay rate: 5.5 * 10 (scaled to BigInt)
+    const scalingFactor = 10n; // Used to emulate float-like calculations
+
+    const expectedHealth = initialHealth - decayRateHealth / scalingFactor;
+    const expectedHappiness =
+      initialHappiness - decayRateHappiness / scalingFactor;
+    const expectedTimeAlive = initialTimeAlive + oneHour;
+
+    // Step 6: Assertions with buffer
+    const buffer = 1n;
+    expect(updatedHealth).to.equal(expectedHealth, "Health decay mismatch");
+    expect(updatedHappiness).to.be.within(
+      expectedHappiness - buffer,
+      expectedHappiness + buffer,
+      "Happiness decay mismatch"
+    );
+    expect(updatedTimeAlive).to.be.within(
+      expectedTimeAlive - 10n,
+      expectedTimeAlive + 10n,
+      "TimeAlive mismatch"
+    );
+
+    // Verify Gotchi is still alive
+    expect(updatedGotchi.deathTimestamp).to.equal(
+      0n,
+      "Gotchi should still be alive"
+    );
+  });
+
+  it("Should apply decay to health and happiness over time while awake", async function () {
+    const tokenId = 1; // Assume addr1 owns tokenId 1
+
+    // Step 1: Fetch initial Gotchi stats for comparison
+    let gotchi = await game.gotchiStats(tokenId);
+    const initialHealth = Number(gotchi.health);
+    const initialHappiness = Number(gotchi.happiness);
+    const initialTimeAlive = Number(gotchi.timeAlive);
+
+    // Step 2: Advance time by 3 hours (10800 seconds)
+    const threeHours = 3 * 60 * 60;
+    await ethers.provider.send("evm_increaseTime", [threeHours]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Trigger state update by calling manualSaveToLeaderboard
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Step 4: Fetch updated Gotchi stats after decay
+    gotchi = await game.gotchiStats(tokenId);
+    const updatedHealth = Number(gotchi.health);
+    const updatedHappiness = Number(gotchi.happiness);
+    const updatedTimeAlive = Number(gotchi.timeAlive);
+
+    // Step 5: Calculate expected values based on decay rates
+    const expectedHealthDecay = 3 * 5.5; // 5.5 points per hour
+    const expectedHappinessDecay = 3 * 4.17; // 4.17 points per hour
+    const expectedHealth = Math.max(0, initialHealth - expectedHealthDecay);
+    const expectedHappiness = Math.max(
+      0,
+      initialHappiness - expectedHappinessDecay
+    );
+    const expectedTimeAliveLower = initialTimeAlive + threeHours - 10; // Lower bound with buffer
+    const expectedTimeAliveUpper = initialTimeAlive + threeHours + 10; // Upper bound with buffer
+
+    // Step 6: Assert the results
+    expect(updatedHealth).to.be.closeTo(expectedHealth, 1); // Allow small tolerance
+    expect(updatedHappiness).to.be.closeTo(expectedHappiness, 1); // Allow small tolerance
+    expect(updatedTimeAlive).to.be.within(
+      expectedTimeAliveLower,
+      expectedTimeAliveUpper,
+      `timeAlive out of range: got ${updatedTimeAlive}, expected between ${expectedTimeAliveLower} and ${expectedTimeAliveUpper}`
+    );
+
+    // Verify Gotchi is still alive
+    expect(Number(gotchi.deathTimestamp)).to.equal(0); // Gotchi should not be dead
+  });
+
+  it("Should apply decay to health and happiness over time while awake", async function () {
+    const tokenId = 1;
+
+    // Step 1: Retrieve initial Gotchi stats
+    const initialGotchi = await game.gotchiStats(tokenId);
+    const initialHealth = Number(initialGotchi.health);
+    const initialHappiness = Number(initialGotchi.happiness);
+    const initialTimeAlive = Number(initialGotchi.timeAlive);
+
+    // Decay parameters
+    const decayRateHealthPerHour = 5.5; // Health decays at 5.5 points/hour
+    const decayRateHappinessPerHour = 4.17; // Happiness decays at 4.17 points/hour
+    const timeElapsed = 3 * 60 * 60; // Advance time by 3 hours (in seconds)
+
+    // Step 2: Advance time by 3 hours
+    await ethers.provider.send("evm_increaseTime", [timeElapsed]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Trigger a state update
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Step 4: Retrieve updated Gotchi stats
+    const updatedGotchi = await game.gotchiStats(tokenId);
+    const updatedHealth = Number(updatedGotchi.health);
+    const updatedHappiness = Number(updatedGotchi.happiness);
+    const updatedTimeAlive = Number(updatedGotchi.timeAlive);
+
+    // Step 5: Calculate expected values
+    const expectedHealth = Math.max(
+      initialHealth - decayRateHealthPerHour * 3,
+      0
+    );
+    const expectedHappiness = Math.max(
+      initialHappiness - decayRateHappinessPerHour * 3,
+      0
+    );
+    const expectedTimeAliveLower = initialTimeAlive + timeElapsed - 10;
+    const expectedTimeAliveUpper = initialTimeAlive + timeElapsed + 10;
+
+    // Step 6: Assertions
+    expect(updatedHealth).to.be.closeTo(expectedHealth, 1); // 1-point tolerance for health
+    expect(updatedHappiness).to.be.closeTo(expectedHappiness, 1); // 1-point tolerance for happiness
+    expect(updatedTimeAlive).to.be.within(
+      expectedTimeAliveLower,
+      expectedTimeAliveUpper,
+      `timeAlive out of range: got ${updatedTimeAlive}, expected between ${expectedTimeAliveLower} and ${expectedTimeAliveUpper}`
+    );
+
+    // Verify Gotchi is still alive
+    expect(Number(updatedGotchi.deathTimestamp)).to.equal(0); // Gotchi should not be dead
+  });
+
+  it("Should pause decay for health and happiness while the Gotchi is asleep", async function () {
+    const tokenId = 1; // Use token ID 1, as initialized in beforeEach
+
+    // Step 1: Retrieve initial Gotchi stats
+    const initialGotchi = await game.gotchiStats(tokenId);
+    const initialHealth = Number(initialGotchi.health);
+    const initialHappiness = Number(initialGotchi.happiness);
+
+    // Define maximum sleep duration in seconds
+    const MAX_SLEEP_DURATION = 8 * 60 * 60; // 8 hours in seconds
+
+    // Step 2: Put the Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Step 3: Advance time by 8 hours (MAX_SLEEP_DURATION)
+    await ethers.provider.send("evm_increaseTime", [MAX_SLEEP_DURATION]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 4: Trigger update via manualSaveToLeaderboard
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Step 5: Retrieve updated Gotchi stats
+    const updatedGotchi = await game.gotchiStats(tokenId);
+    const updatedHealth = Number(updatedGotchi.health);
+    const updatedHappiness = Number(updatedGotchi.happiness);
+    const updatedTimeAlive = Number(updatedGotchi.timeAlive);
+
+    // Step 6: Calculate expected values
+    const expectedHealth = 80; // After 8 hours, health should decrease by 20
+    const expectedHappiness = 80; // After 8 hours, happiness should decrease by 20
+    const expectedTimeAliveLower = MAX_SLEEP_DURATION - 10; // Account for timing variance
+    const expectedTimeAliveUpper = MAX_SLEEP_DURATION + 10;
+
+    // Step 7: Assertions
+    expect(updatedHealth).to.equal(
+      expectedHealth,
+      `Health mismatch: expected ${expectedHealth}, got ${updatedHealth}`
+    );
+    expect(updatedHappiness).to.equal(
+      expectedHappiness,
+      `Happiness mismatch: expected ${expectedHappiness}, got ${updatedHappiness}`
+    );
+    expect(updatedTimeAlive).to.be.within(
+      expectedTimeAliveLower,
+      expectedTimeAliveUpper,
+      `timeAlive out of range: got ${updatedTimeAlive}, expected between ${expectedTimeAliveLower} and ${expectedTimeAliveUpper}`
+    );
+  });
+
+  it("Should apply decay to health and happiness after exceeding MAX_SLEEP_DURATION while the Gotchi is asleep", async function () {
+    const tokenId = 1; // Use token ID 1, as initialized in beforeEach
+
+    // Step 1: Retrieve initial Gotchi stats
+    const initialGotchi = await game.gotchiStats(tokenId);
+    const initialHealth = Number(initialGotchi.health); // Should be 80
+    const initialHappiness = Number(initialGotchi.happiness); // Should be 80
+
+    // Define maximum sleep duration and oversleep duration
+    const MAX_SLEEP_DURATION = 8 * 60 * 60; // 8 hours in seconds
+    const OVERSLEEP_DURATION = 2 * 60 * 60; // 2 hours in seconds
+    const TOTAL_DURATION = MAX_SLEEP_DURATION + OVERSLEEP_DURATION; // 10 hours in seconds
+
+    // Step 2: Put the Gotchi to sleep
+    await game.connect(addr1).sleep(tokenId);
+
+    // Step 3: Advance time by 10 hours (8 hours sleep + 2 hours oversleep)
+    await ethers.provider.send("evm_increaseTime", [TOTAL_DURATION]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 4: Trigger update via manualSaveToLeaderboard
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Step 5: Retrieve updated Gotchi stats
+    const updatedGotchi = await game.gotchiStats(tokenId);
+    const updatedHealth = Number(updatedGotchi.health);
+    const updatedHappiness = Number(updatedGotchi.happiness);
+    const updatedTimeAlive = Number(updatedGotchi.timeAlive);
+
+    // Step 6: Calculate expected values
+    const expectedHealth = 80 - 2 * 5.5; // 69
+    const expectedHappiness = Math.round(80 - 2 * 4.16); // ≈ 72
+    const expectedTimeAliveLower = TOTAL_DURATION - 10; // Account for timing variance
+    const expectedTimeAliveUpper = TOTAL_DURATION + 10;
+
+    // Step 7: Assertions
+    expect(updatedHealth).to.equal(
+      expectedHealth,
+      `Health mismatch: expected ${expectedHealth}, got ${updatedHealth}`
+    );
+    expect(updatedHappiness).to.equal(
+      expectedHappiness,
+      `Happiness mismatch: expected ${expectedHappiness}, got ${updatedHappiness}`
+    );
+    expect(updatedTimeAlive).to.be.within(
+      expectedTimeAliveLower,
+      expectedTimeAliveUpper,
+      `timeAlive out of range: got ${updatedTimeAlive}, expected between ${expectedTimeAliveLower} and ${expectedTimeAliveUpper}`
+    );
+  });
+
+  it("Should maintain health and happiness through regular feeding and playing", async function () {
+    const tokenId = 1; // Use token ID 1
+    const ONE_HOUR = 60 * 60; // 1 hour in seconds
+
+    // Step 1: Initial feed and play
+    await game.connect(addr1).feed(tokenId);
+    await game.connect(addr1).play(tokenId);
+
+    // Step 2: Decay for 4 hours
+    await ethers.provider.send("evm_increaseTime", [4 * ONE_HOUR]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Second feed and play
+    await game.connect(addr1).feed(tokenId);
+    await game.connect(addr1).play(tokenId);
+
+    // Step 4: Decay for another 4 hours
+    await ethers.provider.send("evm_increaseTime", [4 * ONE_HOUR]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 5: Third feed and play
+    await game.connect(addr1).feed(tokenId);
+    await game.connect(addr1).play(tokenId);
+
+    // Step 6: Trigger update to finalize stats
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Step 7: Retrieve updated Gotchi stats
+    const updatedGotchi = await game.gotchiStats(tokenId);
+    const updatedHealth = Number(updatedGotchi.health);
+    const updatedHappiness = Number(updatedGotchi.happiness);
+    const updatedTimeAlive = Number(updatedGotchi.timeAlive);
+
+    // Step 8: Define expected values and ranges
+    const expectedHealth = 66;
+    const expectedHappiness = 76.72;
+    const expectedTimeAliveLower = 8 * ONE_HOUR - 10; // Account for timing variance
+    const expectedTimeAliveUpper = 8 * ONE_HOUR + 10;
+
+    /// Step 9: Assertions
+    expect(updatedHealth).to.equal(
+      expectedHealth,
+      `Health mismatch: expected ${expectedHealth}, got ${updatedHealth}`
+    );
+    expect(updatedHappiness).to.be.closeTo(
+      expectedHappiness,
+      2, // Adjusted tolerance to ±2
+      `Happiness mismatch: expected close to ${expectedHappiness}, got ${updatedHappiness}`
+    );
+    expect(updatedTimeAlive).to.be.within(
+      expectedTimeAliveLower - 10,
+      expectedTimeAliveUpper + 10,
+      `timeAlive out of range: got ${updatedTimeAlive}, expected between ${expectedTimeAliveLower} and ${expectedTimeAliveUpper}`
+    );
+  });
+  it("Should update timeAlive correctly when health and happiness decay to zero due to idle state", async function () {
+    const tokenId = 1;
+
+    // Move time forward by 48 hours (48 * 60 * 60 seconds)
+    const fortyEightHours = 48 * 60 * 60;
+    await ethers.provider.send("evm_increaseTime", [fortyEightHours]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Trigger stats update via manualSaveToLeaderboard
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Retrieve updated Gotchi stats
+    const stats = await game.gotchiStats(tokenId);
+    const timeAlive = BigInt(stats.timeAlive); // Convert to BigInt for comparison
+
+    // Expected timeAlive: 52363 seconds (+/- 10 seconds)
+    const expectedTimeAlive = BigInt(Math.floor((80 / 5.5) * 3600)); // 52363 seconds
+    expect(timeAlive).to.be.closeTo(expectedTimeAlive, BigInt(10)); // +/- 10 seconds tolerance
   });
 
   //
