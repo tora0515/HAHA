@@ -17,7 +17,7 @@ interface IERC20 {
  * a pre-defined amount of tokens at specific intervals, while the owner can adjust parameters
  * like lock time and withdrawal amount or replenish the faucet's balance.
  */
-contract Faucet {
+contract HAHAFaucetMinato {
     address payable owner;
     IERC20 public token;
     /* 100m withdrawal limit */

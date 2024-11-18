@@ -9,15 +9,19 @@ async function main() {
     throw new Error("HAHA_MINATO_TOKEN_ADDRESS is not defined in .env");
   }
 
-  const Faucet = await ethers.getContractFactory("Faucet");
+  const HAHAFaucetMinato = await ethers.getContractFactory("HAHAFaucetMinato");
   console.log("Deploying HAHAFaucetMinato...");
 
-  const faucet = await Faucet.deploy(HAHA_MINATO_TOKEN_ADDRESS);
-  await faucet.waitForDeployment();
+  const hahafaucetminato = await HAHAFaucetMinato.deploy(
+    HAHA_MINATO_TOKEN_ADDRESS
+  );
+  await hahafaucetminato.waitForDeployment();
 
-  const deploymentReceipt = await faucet.deploymentTransaction().wait(1); // Ethers v6 syntax
+  const deploymentReceipt = await hahafaucetminato
+    .deploymentTransaction()
+    .wait(1); // Ethers v6 syntax
 
-  console.log("HAHAFaucetMinato deployed to:", faucet.target); // In Ethers v6, use `.target` for contract address
+  console.log("HAHAFaucetMinato deployed to:", hahafaucetminato.target); // In Ethers v6, use `.target` for contract address
   console.log("Deployment receipt:", deploymentReceipt);
 }
 
