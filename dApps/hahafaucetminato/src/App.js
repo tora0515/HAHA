@@ -25,7 +25,7 @@ function App() {
           setWalletAddress(accounts[0]);
           console.log(accounts[0]);
         } else {
-          console.log("Connect to MetaMask using the Connect button");
+          console.log("Connect by using the Connect Wallet button");
         }
       } catch (err) {
         console.error(err.message);
@@ -144,7 +144,7 @@ function App() {
                       0,
                       6
                     )}...${walletAddress.substring(38)})`
-                  : "Connect Metamask"}
+                  : "Connect Wallet"}
               </span>
             </button>
           </div>
@@ -169,7 +169,7 @@ function App() {
                   <input
                     className="input is-medium"
                     type="text"
-                    placeholder="Connect your metamask wallet address (0x...)"
+                    placeholder="Connect your wallet address (0x...)"
                     defaultValue={walletAddress}
                   />
                 </div>
