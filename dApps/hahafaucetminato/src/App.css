@@ -1,5 +1,6 @@
 body {
-  background: url("./images/bg-1.png") no-repeat;
+  background: linear-gradient(135deg, #1a2980 0%, #26d0ce 100%);
+  /*background: url("./images/bg-1.png") no-repeat;*/
   background-color: #070709;
   color: white;
 }
@@ -18,7 +19,7 @@ body {
 }
 
 .panel-heading {
-  xbackground-image: linear-gradient(to left,#38052F, #070709);
+  background-image: linear-gradient(to left, #38052f, #070709);
   background-color: black;
   color: white;
 }
@@ -32,15 +33,32 @@ body {
 }
 
 .navbar {
-  background-color: black;
+  background-color: inherit;
 }
 
+.navbar-end {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.navbar,
+.navbar-end,
+.navbar-menu,
+.navbar-start {
+  align-items: stretch;
+  display: flex;
+}
 .navbar .navbar-item {
   color: white;
 }
 
+.navibar .menu {
+  flex-grow: 1;
+  flex-shrink: 0;
+}
+
 .connect-wallet span {
-  color: #E10859;
+  color: #1a2980;
 }
 
 .connect-wallet:hover {
@@ -61,4 +79,37 @@ body {
 
 .withdraw-success {
   color: green;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  font-size: 1.5em;
+  font-weight: 700;
+}
+
+.logo img {
+  height: 3em;
+  margin-right: 0.5em;
+}
+
+.navbar > .container {
+  align-items: stretch;
+  display: flex;
+  min-height: 3.25rem;
+  width: 100%;
+}
+
+.navbar,
+.faucet-hero-body {
+  padding: 0.5rem;
+}
+
+.withdraw-error,
+.withdraw-success {
+  background-color: white;
+  background-color: #fff;
+  border-radius: 6px;
+  box-shadow: 0 0.5em 1em -0.125em rgba(10, 10, 10, 0.1),
+    0 0 0 1px rgba(10, 10, 10, 0.02);
 }
