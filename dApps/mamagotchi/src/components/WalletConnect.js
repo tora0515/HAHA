@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 import '../css/WalletConnect.css';
 import MamaGotchiABI from '../MamaGotchiGameMinato_ABI.json';
 
-const contractAddress = '0x246A74Ad5848640cb6bBe516DEAD50F7ED407030';
+const contractAddress = '0x37EA6481ecc5f907948e8a3F77655D3C417d809c';
 
 // Helper function to format seconds into DD:HH:MM:SS
 const formatTime = (seconds) => {
@@ -33,11 +33,31 @@ const WalletConnect = () => {
     deathTimestamp: null,
   });
 
-  // Load wallet from localStorage if available
-  useEffect(() => {
-    const savedWallet = localStorage.getItem('walletAddress');
-    if (savedWallet) {
-      reconnectWallet(savedWallet);
+  const reconnectWallet = useCallback(async (savedWallet) => {
+    if (window.ethereum) {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+
+        setWalletAddress(savedWallet); // Restore wallet address from localStorage
+
+        // Connect to the contract
+        const gameContract = new ethers.Contract(
+          contractAddress,
+          MamaGotchiABI,
+          signer
+        );
+        setContract(gameContract); // Store the contract instance
+
+        // Query initial game data
+        const initialGotchiData = await fetchGotchiData(
+          gameContract,
+          savedWallet
+        );
+        setGotchiData(initialGotchiData);
+      } catch (error) {
+        console.error('Error reconnecting wallet or contract:', error);
+      }
     }
   }, []);
 
@@ -73,40 +93,42 @@ const WalletConnect = () => {
     }
   };
 
-  const reconnectWallet = async (savedWallet) => {
-    if (window.ethereum) {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-
-        setWalletAddress(savedWallet); // Restore wallet address from localStorage
-
-        // Connect to the contract
-        const gameContract = new ethers.Contract(
-          contractAddress,
-          MamaGotchiABI,
-          signer
-        );
-        setContract(gameContract); // Store the contract instance
-
-        // Query initial game data
-        const initialGotchiData = await fetchGotchiData(
-          gameContract,
-          savedWallet
-        );
-        setGotchiData(initialGotchiData);
-      } catch (error) {
-        console.error('Error reconnecting wallet or contract:', error);
-      }
+  // Load wallet from localStorage if available
+  useEffect(() => {
+    const savedWallet = localStorage.getItem('walletAddress');
+    if (savedWallet) {
+      reconnectWallet(savedWallet);
     }
-  };
+  }, [reconnectWallet]);
 
   const fetchGotchiData = async (gameContract, address) => {
     try {
-      const tokenId = 1; // Replace with logic to determine the player's token ID if necessary
+      // Get the tokenId associated with the player
+      const tokenId = await gameContract.ownerToTokenId(address);
+      if (tokenId === 0) {
+        console.warn('No Gotchi found for the connected wallet.');
+        return {
+          isAlive: false,
+          health: null,
+          happiness: null,
+          timeAlive: null,
+          isSleeping: null,
+          sleepStartTime: null,
+          lastFeedTime: null,
+          lastPlayTime: null,
+          lastSleepTime: null,
+          lastInteraction: null,
+          deathTimestamp: null,
+        };
+      }
+
+      // Check if the Gotchi is alive
       const isAlive = await gameContract.isAlive(tokenId);
+
+      // Fetch Gotchi stats
       const gotchiStats = await gameContract.gotchiStats(tokenId);
 
+      // Return the structured Gotchi data
       return {
         isAlive,
         health: gotchiStats.health.toString(),
