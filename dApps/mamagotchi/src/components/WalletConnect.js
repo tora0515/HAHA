@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
-import { formatTime } from '../utils';
 import '../css/WalletConnect.css';
 import MamaGotchiABI from '../MamaGotchiGameMinato_ABI.json';
 

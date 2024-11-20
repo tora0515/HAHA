@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import WalletConnect from './components/WalletConnect';
-import HealthBar from './components/HealthBar';
-import HappinessBar from './components/HappinessBar';
 
 function App() {
   const [gotchiData, setGotchiData] = useState(null); // Centralized state for Gotchi data
