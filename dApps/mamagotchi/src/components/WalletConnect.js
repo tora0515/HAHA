@@ -49,22 +49,14 @@ const WalletConnect = () => {
         isAlive,
         health: gotchiStats.health.toString(),
         happiness: gotchiStats.happiness.toString(),
-        timeAlive: formatTime(parseInt(gotchiStats.timeAlive.toString())),
+        timeAlive: parseInt(gotchiStats.timeAlive.toString()), // Keep in seconds
         isSleeping: gotchiStats.isSleeping,
-        sleepStartTime: formatTime(
-          parseInt(gotchiStats.sleepStartTime.toString())
-        ),
-        lastFeedTime: formatTime(parseInt(gotchiStats.lastFeedTime.toString())),
-        lastPlayTime: formatTime(parseInt(gotchiStats.lastPlayTime.toString())),
-        lastSleepTime: formatTime(
-          parseInt(gotchiStats.lastSleepTime.toString())
-        ),
-        lastInteraction: formatTime(
-          parseInt(gotchiStats.lastInteraction.toString())
-        ),
-        deathTimestamp: formatTime(
-          parseInt(gotchiStats.deathTimestamp.toString())
-        ),
+        sleepStartTime: parseInt(gotchiStats.sleepStartTime.toString()), // Seconds
+        lastFeedTime: parseInt(gotchiStats.lastFeedTime.toString()), // Seconds
+        lastPlayTime: parseInt(gotchiStats.lastPlayTime.toString()), // Seconds
+        lastSleepTime: parseInt(gotchiStats.lastSleepTime.toString()), // Seconds
+        lastInteraction: parseInt(gotchiStats.lastInteraction.toString()), // Seconds
+        deathTimestamp: parseInt(gotchiStats.deathTimestamp.toString()), // Seconds
       };
     } catch (error) {
       console.error('Error fetching Gotchi data:', error);
