@@ -7,7 +7,7 @@ import MamaGotchiABI from '../MamaGotchiGameMinato_ABI.json';
 const contractAddress = '0x37EA6481ecc5f907948e8a3F77655D3C417d809c';
 
 // Default Gotchi Data
-const defaultGotchiData = {
+export const defaultGotchiData = {
   isAlive: false,
   health: null,
   happiness: null,

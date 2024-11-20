@@ -1,30 +1,24 @@
 import React, { useState } from 'react';
-import WalletConnect from './components/WalletConnect';
+import WalletConnect, { defaultGotchiData } from './components/WalletConnect';
+import HealthBar from './components/HealthBar';
+// Import other components like HappinessBar as needed
 
 function App() {
-  const [gotchiData, setGotchiData] = useState(null); // Centralized state for Gotchi data
+  // Centralized state for Gotchi data with default values
+  const [gotchiData, setGotchiData] = useState(defaultGotchiData);
 
   return (
     <div>
       <h1>MamaGotchi</h1>
+
       {/* Wallet Connection */}
       <WalletConnect onGotchiData={setGotchiData} />
 
       {/* Conditional rendering of Gotchi-related components */}
-      {gotchiData ? (
+      {gotchiData.health !== null ? (
         <>
-          <HealthBar
-            initialHealth={gotchiData.health}
-            lastInteraction={gotchiData.lastInteraction}
-            decayRate={550} // Example decay rate
-            maxValue={100} // Maximum health
-          />
-          <HappinessBar
-            initialHappiness={gotchiData.happiness}
-            lastInteraction={gotchiData.lastInteraction}
-            decayRate={416} // Example decay rate
-            maxValue={100} // Maximum happiness
-          />
+          <HealthBar initialHealth={gotchiData.health} />
+          {/* Add HappinessBar and other components here */}
         </>
       ) : (
         <p>Please connect your wallet and mint your Gotchi to start playing.</p>
