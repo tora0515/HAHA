@@ -1,21 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
+import { formatTime } from '../utils';
 import '../css/WalletConnect.css';
 import MamaGotchiABI from '../MamaGotchiGameMinato_ABI.json';
 
 // Contract address for MamaGotchiGameMinato
 const contractAddress = '0x37EA6481ecc5f907948e8a3F77655D3C417d809c';
-
-// Helper function to format seconds into DD:HH:MM:SS
-const formatTime = (seconds) => {
-  const days = Math.floor(seconds / (24 * 3600));
-  seconds %= 24 * 3600;
-  const hours = Math.floor(seconds / 3600);
-  seconds %= 3600;
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${days}d ${hours}h ${minutes}m ${secs}s`;
-};
 
 // Default Gotchi Data
 const defaultGotchiData = {
@@ -83,6 +73,40 @@ const WalletConnect = () => {
   };
 
   /**
+   * Reconnect the user's wallet if previously connected
+   */
+  const connectWallet = async () => {
+    if (window.ethereum) {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const accounts = await provider.send('eth_requestAccounts', []);
+
+        const wallet = accounts[0];
+        setWalletAddress(wallet);
+        localStorage.setItem('walletAddress', wallet);
+
+        const gameContract = new ethers.Contract(
+          contractAddress,
+          MamaGotchiABI,
+          signer
+        );
+        setContract(gameContract);
+
+        const initialGotchiData = await fetchGotchiData(gameContract, wallet);
+        setGotchiData(initialGotchiData);
+      } catch (error) {
+        console.error('Error connecting to wallet or contract:', error);
+        setGotchiData(defaultGotchiData); // Reset Gotchi data on error
+      }
+    } else {
+      alert(
+        'No Ethereum wallet detected. Please install MetaMask or use another EVM wallet.'
+      );
+    }
+  };
+
+  /**
    * Connect the user's wallet and initialize the contract connection
    */
   const reconnectWallet = useCallback(async (savedWallet) => {
@@ -109,39 +133,6 @@ const WalletConnect = () => {
       }
     }
   }, []);
-
-  /**
-   * Reconnect the user's wallet if previously connected
-   */
-  const connectWallet = async () => {
-    if (window.ethereum) {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const accounts = await provider.send('eth_requestAccounts', []);
-
-        const wallet = accounts[0];
-        setWalletAddress(wallet);
-        localStorage.setItem('walletAddress', wallet);
-
-        const gameContract = new ethers.Contract(
-          contractAddress,
-          MamaGotchiABI,
-          signer
-        );
-        setContract(gameContract);
-        const initialGotchiData = await fetchGotchiData(gameContract, wallet);
-        setGotchiData(initialGotchiData);
-      } catch (error) {
-        console.error('Error connecting to wallet or contract:', error);
-        setGotchiData(defaultGotchiData); // Reset Gotchi data on error
-      }
-    } else {
-      alert(
-        'No Ethereum wallet detected. Please install MetaMask or use another EVM wallet.'
-      );
-    }
-  };
 
   // Auto-reconnect on page load if wallet address is saved
   useEffect(() => {
