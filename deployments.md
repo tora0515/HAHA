@@ -24,7 +24,7 @@ This document records details of each deployment for HAHA Token and MamaGotchiGa
 
 ## Minato Testnet Deployment - MamaGotchiGameMinato Contract
 
-**Date of Deployment**: November 16, 2024  
+**Date of Deployment**: November 20, 2024  
 **Network**: Minato Testnet  
 **Contract Address**: 0x37EA6481ecc5f907948e8a3F77655D3C417d809c  
 **HAHA Token Address**: 0x38611615d7A357B8C88523bd02d85375fAF1E8D1  
