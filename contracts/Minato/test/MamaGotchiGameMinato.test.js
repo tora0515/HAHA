@@ -2906,6 +2906,38 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     expect(timeAlive).to.be.closeTo(expectedTimeAlive, BigInt(10)); // +/- 10 seconds tolerance
   });
 
+  it("Should update ownerToTokenId correctly after minting a new Gotchi post-death", async function () {
+    const tokenId = 1;
+
+    // Step 1: Advance time to ensure Gotchi dies
+    const twoDays = 48 * 60 * 60; // 48 hours in seconds
+    await ethers.provider.send("evm_increaseTime", [twoDays]);
+    await ethers.provider.send("evm_mine");
+
+    // Step 3: Mint a new Gotchi, specifying tokenId 1 to burn
+    const mintCost = await game.mintCost();
+    await hahaToken.connect(addr1).approve(game.target, mintCost);
+    await game.connect(addr1).mintNewGotchi(addr1.address, tokenId);
+
+    // Step 4: Verify the ownerToTokenId mapping is updated to the new tokenId (2)
+    const updatedTokenId = await game.ownerToTokenId(addr1.address);
+    expect(updatedTokenId).to.equal(2); // New token ID should be 2
+  });
+
+  it("Should update ownerToTokenId mapping after minting a new Gotchi", async function () {
+    const tokenIdToBurn = 1;
+
+    // Burn the existing Gotchi
+    await game.connect(addr1).burn(tokenIdToBurn);
+
+    // Mint a new Gotchi
+    await game.connect(addr1).mintNewGotchi(addr1.address, tokenIdToBurn);
+
+    // Verify the ownerToTokenId mapping is updated to the new token ID
+    const newTokenId = await game.ownerToTokenId(addr1.address);
+    expect(newTokenId).to.equal(2); // Assuming the new token ID is 2
+  });
+
   //
   //
   //

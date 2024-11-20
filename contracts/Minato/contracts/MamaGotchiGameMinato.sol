@@ -47,6 +47,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     // Reference to the $HAHA token contract
     IERC20 public hahaToken;
 
+    mapping(address => uint256) public ownerToTokenId;
     mapping(address => uint256) public playerHighScores;
     mapping(uint256 => Gotchi) public gotchiStats;
 
@@ -159,6 +160,10 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         _saveToLeaderboard(tokenIdToBurn);
 
             _burn(tokenIdToBurn);
+
+             // Clear the owner-to-token mapping
+            delete ownerToTokenId[msg.sender];
+
             emit GotchiBurned(msg.sender, tokenIdToBurn);
         }
 
@@ -187,6 +192,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
             0,        // timeAlive
             0         // lastSaveTime
         );
+
+        // Update the ownerToTokenId mapping
+        ownerToTokenId[to] = newTokenId;
 
         emit GotchiMinted(to, newTokenId, gotchiStats[newTokenId].health, gotchiStats[newTokenId].happiness, gotchiStats[newTokenId].timeAlive);
     }
