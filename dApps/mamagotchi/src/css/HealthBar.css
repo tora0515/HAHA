@@ -1,0 +1,25 @@
+/* HealthBar.css */
+.health-bar-container {
+  width: 100%;
+  height: 20px;
+  background-color: #ccc; /* Gray background for the base bar */
+  border-radius: 5px;
+  overflow: hidden;
+  position: relative;
+}
+
+.health-bar {
+  height: 100%;
+  background-color: red; /* Red color for health */
+  transition: width 0.2s ease-in-out; /* Smooth transition for health changes */
+}
+
+.health-text {
+  position: absolute;
+  top: 5%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+}

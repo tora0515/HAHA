@@ -5,6 +5,14 @@
   color: #333;
 }
 
+/* May need to change in the future when we have the error component completed */
+.error-message {
+  color: red;
+  font-weight: bold;
+  text-align: center;
+  margin-top: 10px;
+}
+
 /* Placeholder for additional styles as we build the app */
 
 /* Gameplay Notification */

@@ -22,17 +22,11 @@ export const defaultGotchiData = {
 };
 
 // Component: WalletConnect
-const WalletConnect = () => {
+const WalletConnect = ({ onGotchiData, onWalletConnect }) => {
   const [walletAddress, setWalletAddress] = useState(null);
   const [contract, setContract] = useState(null);
   const [gotchiData, setGotchiData] = useState(defaultGotchiData);
 
-  /**
-   * Fetch Gotchi data from the contract based on the user's wallet address
-   * @param {ethers.Contract} gameContract - Instance of the MamaGotchi contract
-   * @param {string} address - User's wallet address
-   * @returns {object} - Gotchi stats or default values if an error occurs
-   */
   const fetchGotchiData = async (gameContract, address) => {
     try {
       const tokenId = await gameContract.ownerToTokenId(address);
@@ -48,14 +42,14 @@ const WalletConnect = () => {
         isAlive,
         health: gotchiStats.health.toString(),
         happiness: gotchiStats.happiness.toString(),
-        timeAlive: parseInt(gotchiStats.timeAlive.toString()), // Keep in seconds
+        timeAlive: parseInt(gotchiStats.timeAlive.toString()),
         isSleeping: gotchiStats.isSleeping,
-        sleepStartTime: parseInt(gotchiStats.sleepStartTime.toString()), // Seconds
-        lastFeedTime: parseInt(gotchiStats.lastFeedTime.toString()), // Seconds
-        lastPlayTime: parseInt(gotchiStats.lastPlayTime.toString()), // Seconds
-        lastSleepTime: parseInt(gotchiStats.lastSleepTime.toString()), // Seconds
-        lastInteraction: parseInt(gotchiStats.lastInteraction.toString()), // Seconds
-        deathTimestamp: parseInt(gotchiStats.deathTimestamp.toString()), // Seconds
+        sleepStartTime: parseInt(gotchiStats.sleepStartTime.toString()),
+        lastFeedTime: parseInt(gotchiStats.lastFeedTime.toString()),
+        lastPlayTime: parseInt(gotchiStats.lastPlayTime.toString()),
+        lastSleepTime: parseInt(gotchiStats.lastSleepTime.toString()),
+        lastInteraction: parseInt(gotchiStats.lastInteraction.toString()),
+        deathTimestamp: parseInt(gotchiStats.deathTimestamp.toString()),
       };
     } catch (error) {
       console.error('Error fetching Gotchi data:', error);
@@ -63,9 +57,6 @@ const WalletConnect = () => {
     }
   };
 
-  /**
-   * Reconnect the user's wallet if previously connected
-   */
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
@@ -86,9 +77,12 @@ const WalletConnect = () => {
 
         const initialGotchiData = await fetchGotchiData(gameContract, wallet);
         setGotchiData(initialGotchiData);
+
+        // Notify parent component that the wallet is connected
+        onWalletConnect(true);
       } catch (error) {
         console.error('Error connecting to wallet or contract:', error);
-        setGotchiData(defaultGotchiData); // Reset Gotchi data on error
+        setGotchiData(defaultGotchiData);
       }
     } else {
       alert(
@@ -97,35 +91,62 @@ const WalletConnect = () => {
     }
   };
 
-  /**
-   * Connect the user's wallet and initialize the contract connection
-   */
-  const reconnectWallet = useCallback(async (savedWallet) => {
-    if (window.ethereum) {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
+  const reconnectWallet = useCallback(
+    async (savedWallet) => {
+      if (window.ethereum) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const signer = await provider.getSigner();
 
-        setWalletAddress(savedWallet);
-        const gameContract = new ethers.Contract(
-          contractAddress,
-          MamaGotchiABI,
-          signer
-        );
-        setContract(gameContract);
-        const initialGotchiData = await fetchGotchiData(
-          gameContract,
-          savedWallet
-        );
-        setGotchiData(initialGotchiData);
-      } catch (error) {
-        console.error('Error reconnecting wallet or contract:', error);
-        setGotchiData(defaultGotchiData); // Reset Gotchi data on error
+          setWalletAddress(savedWallet);
+          const gameContract = new ethers.Contract(
+            contractAddress,
+            MamaGotchiABI,
+            signer
+          );
+          setContract(gameContract);
+          const initialGotchiData = await fetchGotchiData(
+            gameContract,
+            savedWallet
+          );
+          setGotchiData(initialGotchiData);
+
+          // Notify parent component that the wallet is connected
+          onWalletConnect(true);
+        } catch (error) {
+          console.error('Error reconnecting wallet or contract:', error);
+          setGotchiData(defaultGotchiData);
+        }
       }
-    }
-  }, []);
+    },
+    [onWalletConnect]
+  );
 
-  // Auto-reconnect on page load if wallet address is saved
+  // Event listener for wallet changes
+  useEffect(() => {
+    if (window.ethereum) {
+      const handleAccountsChanged = (accounts) => {
+        if (accounts.length === 0) {
+          // Wallet disconnected
+          setWalletAddress(null);
+          setGotchiData(defaultGotchiData);
+          onWalletConnect(false);
+        }
+      };
+
+      // Listen for account changes
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+
+      return () => {
+        // Cleanup listener
+        window.ethereum.removeListener(
+          'accountsChanged',
+          handleAccountsChanged
+        );
+      };
+    }
+  }, [onWalletConnect]);
+
   useEffect(() => {
     const savedWallet = localStorage.getItem('walletAddress');
     if (savedWallet) {
@@ -133,18 +154,12 @@ const WalletConnect = () => {
     }
   }, [reconnectWallet]);
 
-  /**
-   * Helper function to truncate a long wallet address
-   * @param {string} address - Wallet address to truncate
-   * @returns {string} - Truncated address
-   */
   const truncateAddress = (address) => {
     return address
       ? `${address.slice(0, 6)}...${address.slice(-4)}`
       : 'Connect Wallet';
   };
 
-  // Render component
   return (
     <div>
       {!walletAddress ? (
