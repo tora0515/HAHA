@@ -325,8 +325,11 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
             decayHealth = calculateHealthDecay(elapsedTime);
             decayHappiness = calculateHappinessDecay(elapsedTime);
 
-              // Determine if Gotchi dies during this decay
-        if (decayHealth >= gotchi.health || decayHappiness >= gotchi.happiness) {
+            gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
+            gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
+
+        // Determine if Gotchi dies during this decay
+        if (gotchi.health == 0 || gotchi.happiness == 0) {
             uint256 timeUntilDeath = calculateTimeUntilDeath(tokenId);
 
             // Update timeAlive and mark death
@@ -337,9 +340,6 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
             return; // Exit after handling death
         }
 
-        // Apply decay and update stats if Gotchi survives
-        gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
-        gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
         gotchi.timeAlive += elapsedTime;
 
         gotchi.lastInteraction = block.timestamp;
