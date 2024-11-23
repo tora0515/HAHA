@@ -27,3 +27,16 @@ export const calculateDecay = (
   const currentStat = Math.max(0, initialStat - decayAmount); // Ensure stat doesn't go below 0
   return currentStat;
 };
+
+/**
+ * Checks if a cooldown period has passed
+ * @param {number} lastInteraction - Timestamp of the last interaction in seconds
+ * @param {number} cooldownDuration - Cooldown duration in seconds
+ * @returns {number} - Remaining cooldown time in seconds (0 if cooldown is over)
+ */
+export const calculateCooldown = (lastInteraction, cooldownDuration) => {
+  const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+  const timeElapsed = currentTime - lastInteraction;
+  const remainingCooldown = cooldownDuration - timeElapsed;
+  return Math.max(remainingCooldown, 0); // Return 0 if cooldown has passed
+};
