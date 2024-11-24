@@ -4,7 +4,7 @@ import '../css/WalletConnect.css';
 import MamaGotchiABI from '../MamaGotchiGameMinato_ABI.json';
 
 // Contract address for MamaGotchiGameMinato
-const contractAddress = '0x37EA6481ecc5f907948e8a3F77655D3C417d809c';
+const contractAddress = '0x9F2609A76E9AF431FCa6bbbdd28BE92d2A283F2E';
 
 // Default Gotchi Data
 export const defaultGotchiData = {

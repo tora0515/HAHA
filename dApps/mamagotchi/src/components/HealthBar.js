@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import '../css/HealthBar.css'; // Ensure this file exists for styling
-import { calculateDecay } from '../utils'; // Import the calculateDecay function
+import '../css/HealthBar.css';
+import { calculateDecay } from '../utils';
+import { HEALTH_DECAY_RATE } from '../constants';
 
 const HealthBar = ({ initialHealth = 0, lastInteraction }) => {
   const [currentHealth, setCurrentHealth] = useState(initialHealth);
@@ -8,7 +9,11 @@ const HealthBar = ({ initialHealth = 0, lastInteraction }) => {
   useEffect(() => {
     // Function to update health periodically
     const updateHealth = () => {
-      const updatedHealth = calculateDecay(initialHealth, lastInteraction, 5.5); // Decay rate: 5.5 per hour
+      const updatedHealth = calculateDecay(
+        initialHealth,
+        lastInteraction,
+        HEALTH_DECAY_RATE
+      ); // Decay rate: 5.5 per hour
       const validatedHealth =
         !isNaN(updatedHealth) && updatedHealth >= 0 ? updatedHealth : 0; // Ensure valid health
       setCurrentHealth(validatedHealth);

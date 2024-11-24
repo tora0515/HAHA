@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { calculateCooldown } from '../utils'; // Import cooldown helper function
+import { calculateCooldown } from '../utils';
+import { FEED_COOLDOWN } from '../constants';
 
 const FeedButton = ({ lastFeedTime, onFeed }) => {
   const [cooldown, setCooldown] = useState(0); // Remaining cooldown time in seconds
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const remainingCooldown = calculateCooldown(lastFeedTime, 10); // 600 seconds = 10 minutes
+      const remainingCooldown = calculateCooldown(lastFeedTime, FEED_COOLDOWN); // 600 seconds = 10 minutes
       setCooldown(remainingCooldown);
     }, 1000); // Update every second
 
