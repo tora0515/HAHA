@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { calculateCooldown } from '../utils';
 import { FEED_COOLDOWN } from '../constants';
 
-const FeedButton = ({ lastFeedTime, onFeed }) => {
+const FeedButton = ({ lastFeedTime, onFeed, initialHealth }) => {
   const [cooldown, setCooldown] = useState(0); // Remaining cooldown time in seconds
 
   useEffect(() => {
@@ -16,10 +16,14 @@ const FeedButton = ({ lastFeedTime, onFeed }) => {
 
   const handleFeed = async () => {
     if (cooldown === 0) {
+      if (initialHealth <= 0) {
+        alert('Your MamaGotchi has expired and cannot be fed.');
+        return;
+      }
       try {
         await onFeed(); // Trigger the feed contract interaction
       } catch (error) {
-        console.error('Error feeding Mamagotchi:', error);
+        console.error('Error feeding MamaGotchi:', error);
       }
     }
   };

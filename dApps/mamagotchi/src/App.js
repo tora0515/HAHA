@@ -69,6 +69,7 @@ function App() {
           <FeedButton
             lastFeedTime={gotchiData.lastFeedTime}
             onFeed={handleFeed}
+            initialHealth={gotchiData.health} // Pass initialHealth to FeedButton
           />
         </>
       )}
