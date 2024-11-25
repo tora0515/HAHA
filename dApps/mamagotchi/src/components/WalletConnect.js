@@ -22,41 +22,50 @@ export const defaultGotchiData = {
 };
 
 // Component: WalletConnect
-const WalletConnect = ({ onGotchiData, onWalletConnect }) => {
+const WalletConnect = ({ onGotchiData, onWalletConnect, onTokenId }) => {
   const [walletAddress, setWalletAddress] = useState(null);
-  const [contract, setContract] = useState(null);
-  const [gotchiData, setGotchiData] = useState(defaultGotchiData);
 
-  const fetchGotchiData = async (gameContract, address) => {
-    try {
-      const tokenId = await gameContract.ownerToTokenId(address);
-      if (tokenId === 0) {
-        console.warn('No Gotchi found for the connected wallet.');
+  /**
+   * Fetch Gotchi data and tokenId from the contract
+   */
+  const fetchGotchiData = useCallback(
+    async (gameContract, address) => {
+      try {
+        const tokenId = await gameContract.ownerToTokenId(address);
+        onTokenId(tokenId); // Pass tokenId to App.js
+
+        if (tokenId === 0) {
+          console.warn('No Gotchi found for the connected wallet.');
+          return defaultGotchiData;
+        }
+
+        const isAlive = await gameContract.isAlive(tokenId);
+        const gotchiStats = await gameContract.gotchiStats(tokenId);
+
+        return {
+          isAlive,
+          health: gotchiStats.health.toString(),
+          happiness: gotchiStats.happiness.toString(),
+          timeAlive: parseInt(gotchiStats.timeAlive.toString()),
+          isSleeping: gotchiStats.isSleeping,
+          sleepStartTime: parseInt(gotchiStats.sleepStartTime.toString()),
+          lastFeedTime: parseInt(gotchiStats.lastFeedTime.toString()),
+          lastPlayTime: parseInt(gotchiStats.lastPlayTime.toString()),
+          lastSleepTime: parseInt(gotchiStats.lastSleepTime.toString()),
+          lastInteraction: parseInt(gotchiStats.lastInteraction.toString()),
+          deathTimestamp: parseInt(gotchiStats.deathTimestamp.toString()),
+        };
+      } catch (error) {
+        console.error('Error fetching Gotchi data:', error);
         return defaultGotchiData;
       }
+    },
+    [onTokenId]
+  );
 
-      const isAlive = await gameContract.isAlive(tokenId);
-      const gotchiStats = await gameContract.gotchiStats(tokenId);
-
-      return {
-        isAlive,
-        health: gotchiStats.health.toString(),
-        happiness: gotchiStats.happiness.toString(),
-        timeAlive: parseInt(gotchiStats.timeAlive.toString()),
-        isSleeping: gotchiStats.isSleeping,
-        sleepStartTime: parseInt(gotchiStats.sleepStartTime.toString()),
-        lastFeedTime: parseInt(gotchiStats.lastFeedTime.toString()),
-        lastPlayTime: parseInt(gotchiStats.lastPlayTime.toString()),
-        lastSleepTime: parseInt(gotchiStats.lastSleepTime.toString()),
-        lastInteraction: parseInt(gotchiStats.lastInteraction.toString()),
-        deathTimestamp: parseInt(gotchiStats.deathTimestamp.toString()),
-      };
-    } catch (error) {
-      console.error('Error fetching Gotchi data:', error);
-      return defaultGotchiData;
-    }
-  };
-
+  /**
+   * Connect Wallet and Initialize Contract Interaction
+   */
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
@@ -73,16 +82,16 @@ const WalletConnect = ({ onGotchiData, onWalletConnect }) => {
           MamaGotchiABI,
           signer
         );
-        setContract(gameContract);
 
         const initialGotchiData = await fetchGotchiData(gameContract, wallet);
-        setGotchiData(initialGotchiData);
 
-        // Notify parent component that the wallet is connected
+        // Notify parent component
+        onGotchiData(initialGotchiData);
         onWalletConnect(true);
       } catch (error) {
         console.error('Error connecting to wallet or contract:', error);
-        setGotchiData(defaultGotchiData);
+        onGotchiData(defaultGotchiData); // Notify App.js of reset state
+        onWalletConnect(false);
       }
     } else {
       alert(
@@ -104,22 +113,23 @@ const WalletConnect = ({ onGotchiData, onWalletConnect }) => {
             MamaGotchiABI,
             signer
           );
-          setContract(gameContract);
+
           const initialGotchiData = await fetchGotchiData(
             gameContract,
             savedWallet
           );
-          setGotchiData(initialGotchiData);
 
-          // Notify parent component that the wallet is connected
+          // Notify parent component
+          onGotchiData(initialGotchiData);
           onWalletConnect(true);
         } catch (error) {
           console.error('Error reconnecting wallet or contract:', error);
-          setGotchiData(defaultGotchiData);
+          onGotchiData(defaultGotchiData); // Notify App.js of reset state
+          onWalletConnect(false);
         }
       }
     },
-    [onWalletConnect]
+    [fetchGotchiData, onGotchiData, onWalletConnect]
   );
 
   // Event listener for wallet changes
@@ -129,7 +139,7 @@ const WalletConnect = ({ onGotchiData, onWalletConnect }) => {
         if (accounts.length === 0) {
           // Wallet disconnected
           setWalletAddress(null);
-          setGotchiData(defaultGotchiData);
+          onGotchiData(defaultGotchiData); // Notify App.js of reset state
           onWalletConnect(false);
         }
       };
@@ -145,7 +155,7 @@ const WalletConnect = ({ onGotchiData, onWalletConnect }) => {
         );
       };
     }
-  }, [onWalletConnect]);
+  }, [onGotchiData, onWalletConnect]);
 
   useEffect(() => {
     const savedWallet = localStorage.getItem('walletAddress');
@@ -160,6 +170,7 @@ const WalletConnect = ({ onGotchiData, onWalletConnect }) => {
       : 'Connect Wallet';
   };
 
+  // Render
   return (
     <div>
       {!walletAddress ? (
@@ -169,11 +180,6 @@ const WalletConnect = ({ onGotchiData, onWalletConnect }) => {
       ) : (
         <div>
           <p className="wallet-address">{truncateAddress(walletAddress)}</p>
-          <p>Is Alive: {gotchiData.isAlive ? 'Yes' : 'No'}</p>
-          <p>Health: {gotchiData.health || 'N/A'}</p>
-          <p>Happiness: {gotchiData.happiness || 'N/A'}</p>
-          <p>Time Alive: {gotchiData.timeAlive || 'N/A'}</p>
-          <p>Is Sleeping: {gotchiData.isSleeping ? 'Yes' : 'No'}</p>
         </div>
       )}
     </div>
