@@ -22,7 +22,12 @@ export const defaultGotchiData = {
 };
 
 // Component: WalletConnect
-const WalletConnect = ({ onGotchiData, onWalletConnect, onTokenId }) => {
+const WalletConnect = ({
+  onGotchiData,
+  onWalletConnect,
+  onTokenId,
+  onContract,
+}) => {
   const [walletAddress, setWalletAddress] = useState(null);
 
   /**
@@ -82,6 +87,7 @@ const WalletConnect = ({ onGotchiData, onWalletConnect, onTokenId }) => {
           MamaGotchiABI,
           signer
         );
+        onContract(gameContract); // Pass contract to App.js
 
         const initialGotchiData = await fetchGotchiData(gameContract, wallet);
 
@@ -113,6 +119,7 @@ const WalletConnect = ({ onGotchiData, onWalletConnect, onTokenId }) => {
             MamaGotchiABI,
             signer
           );
+          onContract(gameContract); // Pass contract to App.js
 
           const initialGotchiData = await fetchGotchiData(
             gameContract,
@@ -129,7 +136,7 @@ const WalletConnect = ({ onGotchiData, onWalletConnect, onTokenId }) => {
         }
       }
     },
-    [fetchGotchiData, onGotchiData, onWalletConnect]
+    [fetchGotchiData, onGotchiData, onWalletConnect, onContract]
   );
 
   // Event listener for wallet changes

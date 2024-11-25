@@ -2,53 +2,20 @@ import React, { useState } from 'react';
 import WalletConnect, { defaultGotchiData } from './components/WalletConnect';
 import HealthBar from './components/HealthBar';
 import FeedButton from './components/FeedButton';
-import { calculateDecay } from './utils';
 
 function App() {
-  const [gotchiData, setGotchiData] = useState({
-    ...defaultGotchiData,
-    health: 50, // Mock initial health value
-    lastInteraction: Math.floor(Date.now() / 1000) - 3600, // Mock last interaction (1 hour ago)
-    lastFeedTime: null, // Mock last feed time for cooldown
-  });
+  const [gotchiData, setGotchiData] = useState(defaultGotchiData); // Centralized state for Gotchi data
   const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const [contract, setContract] = useState(null); // Blockchain contract instance
+  const [tokenId, setTokenId] = useState(null); // Token ID of the MamaGotchi
 
-  const handleFeed = async () => {
-    const currentTime = Math.floor(Date.now() / 1000);
-    const cooldownTime = 10; // 10 seconds for testing (set to 600 for production)
-
-    // Check for cooldown
-    if (
-      gotchiData.lastFeedTime &&
-      currentTime - gotchiData.lastFeedTime < cooldownTime
-    ) {
-      alert(
-        `Feed cooldown active. Try again in ${
-          cooldownTime - (currentTime - gotchiData.lastFeedTime)
-        } seconds.`
-      );
-      return;
-    }
-
-    // Calculate health with decay applied
-    const decayedHealth = calculateDecay(
-      gotchiData.health,
-      gotchiData.lastInteraction,
-      5.5 // Decay rate
-    );
-
-    // Update health by adding 10 points (max 100)
-    const newHealth = Math.min(decayedHealth + 10, 100);
-
-    // Update gotchiData state
-    const updatedGotchiData = {
-      ...gotchiData,
-      health: newHealth,
-      lastInteraction: currentTime, // Update interaction time
-      lastFeedTime: currentTime, // Update feed time
-    };
-
-    setGotchiData(updatedGotchiData);
+  // Function to update Gotchi data
+  // eslint-disable-next-line no-unused-vars
+  const updateGotchiData = (updatedStats) => {
+    setGotchiData((prevData) => ({
+      ...prevData,
+      ...updatedStats, // Merge new stats into existing state
+    }));
   };
 
   return (
@@ -59,17 +26,19 @@ function App() {
         <p>Please connect your wallet to start playing MamaGotchi!</p>
       ) : (
         <>
-          {/* Render HealthBar with initialHealth and lastInteraction */}
+          {/* Render HealthBar */}
           <HealthBar
-            initialHealth={gotchiData.health}
+            initialHealth={gotchiData.health ?? 0}
             lastInteraction={gotchiData.lastInteraction}
           />
 
           {/* Render FeedButton */}
           <FeedButton
             lastFeedTime={gotchiData.lastFeedTime}
-            onFeed={handleFeed}
-            initialHealth={gotchiData.health} // Pass initialHealth to FeedButton
+            initialHealth={gotchiData.health}
+            tokenId={tokenId}
+            contract={contract}
+            onUpdateStats={updateGotchiData}
           />
         </>
       )}
@@ -78,6 +47,8 @@ function App() {
       <WalletConnect
         onGotchiData={setGotchiData}
         onWalletConnect={setIsWalletConnected}
+        onTokenId={setTokenId}
+        onContract={setContract}
       />
     </div>
   );
