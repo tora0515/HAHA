@@ -2886,25 +2886,6 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
       `timeAlive out of range: got ${updatedTimeAlive}, expected between ${expectedTimeAliveLower} and ${expectedTimeAliveUpper}`
     );
   });
-  it("Should update timeAlive correctly when health and happiness decay to zero due to idle state", async function () {
-    const tokenId = 1;
-
-    // Move time forward by 48 hours (48 * 60 * 60 seconds)
-    const fortyEightHours = 48 * 60 * 60;
-    await ethers.provider.send("evm_increaseTime", [fortyEightHours]);
-    await ethers.provider.send("evm_mine", []);
-
-    // Trigger stats update via manualSaveToLeaderboard
-    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
-
-    // Retrieve updated Gotchi stats
-    const stats = await game.gotchiStats(tokenId);
-    const timeAlive = BigInt(stats.timeAlive); // Convert to BigInt for comparison
-
-    // Expected timeAlive: 52363 seconds (+/- 10 seconds)
-    const expectedTimeAlive = BigInt(Math.floor((80 / 5.5) * 3600)); // 52363 seconds
-    expect(timeAlive).to.be.closeTo(expectedTimeAlive, BigInt(10)); // +/- 10 seconds tolerance
-  });
 
   it("Should update ownerToTokenId correctly after minting a new Gotchi post-death", async function () {
     const tokenId = 1;
@@ -2938,9 +2919,53 @@ describe("MamaGotchiGameMinato Contract - Time and Cooldown Functionality", func
     expect(newTokenId).to.equal(2); // Assuming the new token ID is 2
   });
 
+  it("Should update timeAlive correctly when health and happiness decay to zero due to idle state", async function () {
+    const tokenId = 1;
+
+    // Move time forward by 48 hours (48 * 60 * 60 seconds)
+    const fortyEightHours = 48 * 60 * 60;
+    await ethers.provider.send("evm_increaseTime", [fortyEightHours]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Trigger stats update via manualSaveToLeaderboard
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Retrieve updated Gotchi stats
+    const stats = await game.gotchiStats(tokenId);
+    const timeAlive = BigInt(stats.timeAlive); // Convert to BigInt for comparison
+
+    // Expected timeAlive: 52363 seconds (+/- 10 seconds)
+    const expectedTimeAlive = BigInt(Math.floor((80 / 5.5) * 3600)); // 52363 seconds
+    expect(timeAlive).to.be.closeTo(expectedTimeAlive, BigInt(10)); // +/- 10 seconds tolerance
+  });
+
   //
   //
   //
   //
   //
 });
+
+/**
+ 
+ it("Should update timeAlive correctly when health and happiness decay to zero due to idle state", async function () {
+    const tokenId = 1;
+
+    // Move time forward by 48 hours (48 * 60 * 60 seconds)
+    const fortyEightHours = 48 * 60 * 60;
+    await ethers.provider.send("evm_increaseTime", [fortyEightHours]);
+    await ethers.provider.send("evm_mine", []);
+
+    // Trigger stats update via manualSaveToLeaderboard
+    await game.connect(addr1).manualSaveToLeaderboard(tokenId);
+
+    // Retrieve updated Gotchi stats
+    const stats = await game.gotchiStats(tokenId);
+    const timeAlive = BigInt(stats.timeAlive); // Convert to BigInt for comparison
+
+    // Expected timeAlive: 52363 seconds (+/- 10 seconds)
+    const expectedTimeAlive = BigInt(Math.floor((80 / 5.5) * 3600)); // 52363 seconds
+    expect(timeAlive).to.be.closeTo(expectedTimeAlive, BigInt(10)); // +/- 10 seconds tolerance
+  });
+ 
+ */
