@@ -235,6 +235,46 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         emit GotchiDied(player, tokenId);
     }
 
+
+
+
+
+function calculateDecay(uint256 duration) internal pure returns (uint256 decayHealth, uint256 decayHappiness) {
+    decayHealth = calculateHealthDecay(duration);
+    decayHappiness = calculateHappinessDecay(duration);
+}
+
+function determineTimeUntilDeath(
+    uint256 decayHealth,
+    uint256 health,
+    uint256 decayHappiness,
+    uint256 happiness,
+    uint256 tokenId
+) internal view returns (uint256) {
+    return (decayHealth >= health || decayHappiness >= happiness)
+        ? calculateTimeUntilDeath(tokenId)
+        : 0;
+}
+
+function applyDecayToStats(Gotchi storage gotchi, uint256 decayHealth, uint256 decayHappiness) internal {
+    // Apply decay to health, ensuring it doesn't go below zero
+    gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
+
+    // Apply decay to happiness, ensuring it doesn't go below zero
+    gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
+}
+
+function zeroStatsIfDead(Gotchi storage gotchi) internal {
+    if (gotchi.health == 0 || gotchi.happiness == 0) {
+        gotchi.health = 0;
+        gotchi.happiness = 0;
+    }
+}
+
+
+
+
+
     /**
     * @dev Updates the timeAlive counter and applies decay for health and happiness.
     * Decay is applied based on time elapsed since the last interaction or sleep start.
@@ -283,24 +323,22 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
 
             if (oversleepDuration > 0) {
                 // Determine decay while sleeping
-                decayHealth = calculateHealthDecay(oversleepDuration);
-                decayHappiness = calculateHappinessDecay(oversleepDuration);
+                (decayHealth, decayHappiness) = calculateDecay(oversleepDuration);
 
                 // Determine exact time until death from idle sleep, if applicable
-                uint256 timeUntilDeath = (decayHealth >= gotchi.health || decayHappiness >= gotchi.happiness)
-                    ? calculateTimeUntilDeath(tokenId)
-                    : 0;
+                uint256 timeUntilDeath = determineTimeUntilDeath(
+                    decayHealth,
+                    gotchi.health,
+                    decayHappiness,
+                    gotchi.happiness,
+                    tokenId
+                );
 
                 // Apply decay to health and happiness
-                gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
-                gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
+                applyDecayToStats(gotchi, decayHealth, decayHappiness);
 
-                // Zero stats if MamaGotchi dies
-                if (gotchi.health == 0) {
-                    decayHappiness = 0; // Stop happiness decay if health is zero
-                } else if (gotchi.happiness == 0) {
-                    decayHealth = 0; // Stop health decay if happiness is zero
-                }
+                // Zero health and happiness if MamaGotchi dies
+                zeroStatsIfDead(gotchi);
 
                 // If health or happiness hits zero, mark death
                 if (gotchi.health == 0 || gotchi.happiness == 0) {
@@ -333,24 +371,24 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
             uint256 elapsedTime = currentTime - gotchi.lastInteraction;
 
             // Determine decay
-            decayHealth = calculateHealthDecay(elapsedTime);
-            decayHappiness = calculateHappinessDecay(elapsedTime);
+            (decayHealth, decayHappiness) = calculateDecay(elapsedTime);
 
             // Determine time until death, only if decay is fatal
-            uint256 timeUntilDeath = (decayHealth >= gotchi.health || decayHappiness >= gotchi.happiness)
-                ? calculateTimeUntilDeath(tokenId)
-                : 0;
+            uint256 timeUntilDeath = determineTimeUntilDeath(
+                    decayHealth,
+                    gotchi.health,
+                    decayHappiness,
+                    gotchi.happiness,
+                    tokenId
+                );
 
             // Apply decay to health and happiness
-            gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
-            gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
+            applyDecayToStats(gotchi, decayHealth, decayHappiness);
 
-            // Zero stats if MamaGotchi dies
-            if (gotchi.health == 0) {
-                decayHappiness = 0; // Stop happiness decay if health is zero
-            } else if (gotchi.happiness == 0) {
-                decayHealth = 0; // Stop health decay if happiness is zero
-            }
+
+            // Zero health and happiness if MamaGotchi dies
+            zeroStatsIfDead(gotchi);
+
 
             // Check if MamaGotchi dies during decay
             if (gotchi.health == 0 || gotchi.happiness == 0) {
