@@ -90,7 +90,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     event CostUpdated(string costType, uint256 newValue);
     event DecayCalculated(uint256 healthDecay, uint256 happinessDecay);
     event CostBurned(address indexed player, uint256 amount, string action);
-    event BaseURIUpdated(string newBaseURI);
+
 
     /**
     * @dev Contract constructor, sets the initial owner and initializes the $HAHA token contract address.
@@ -117,12 +117,7 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     */
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         require(ownerOf(tokenId) != address(0), "ERC721Metadata: URI query for nonexistent token");
-        return string(abi.encodePacked(_baseURI(), Strings.toString(tokenId)));
-    }
-
-    // Function to get the base URI
-    function _baseURI() internal view override returns (string memory) {
-        return _baseTokenURI;
+        return "https://gateway.pinata.cloud/ipfs/QmRCaEGi3FB7fWB9KCmtfV8i6RvNRqZXGY7F1KF4jkdTrm";
     }
 
     /**
@@ -671,12 +666,6 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     function setMintCost(uint256 newMintCost) external onlyOwner {
         mintCost = newMintCost;
         emit CostUpdated("MintCost", newMintCost);
-    }
-
-    // Owner-only function to set a new base URI
-    function setBaseURI(string memory newBaseURI) external onlyOwner {
-        _baseTokenURI = newBaseURI;
-        emit BaseURIUpdated(newBaseURI);
     }
 
     /**
