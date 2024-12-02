@@ -9,8 +9,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 
-
-
 contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuard {
     uint256 private _nextTokenId = 1;
 
@@ -91,7 +89,6 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     event DecayCalculated(uint256 healthDecay, uint256 happinessDecay);
     event CostBurned(address indexed player, uint256 amount, string action);
 
-
     /**
     * @dev Contract constructor, sets the initial owner and initializes the $HAHA token contract address.
     * Defines initial costs for minting, feeding, and playing actions.
@@ -121,12 +118,8 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Internal function to prevent transfers of MamaGotchi tokens, enforcing their soulbound nature.
-    * Allows minting and burning only.
-    * @param to The address receiving the token (must be address(0) for burning).
-    * @param tokenId The ID of the token.
-    * @param auth The authorized address for this action.
-    * @return The address of the new owner (compatible with ERC721).
+    * @dev Prevents transfers of MamaGotchi tokens, enforcing their soulbound nature.
+    * Only minting and burning actions are permitted.
     */
     function _update(
         address to,
@@ -144,10 +137,10 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Mints a new MamaGotchi for a player, optionally burning an existing one.
-    * Requires the player to have sufficient $HAHA tokens approved for the mint cost.
-    * @param to The address to receive the new MamaGotchi.
-    * @param tokenIdToBurn Optional: ID of the MamaGotchi to burn.
+    * @dev Mints a new MamaGotchi for a player. Requires burning an existing token if the player already owns one.
+    * Ensures sufficient $HAHA token balance and allowance before minting.
+    * @param to The address receiving the new MamaGotchi.
+    * @param tokenIdToBurn ID of the token to burn if the player owns one. Pass 0 if no token exists.
     */
     function mintNewGotchi(address to, uint256 tokenIdToBurn) external nonReentrant {
         address player = msg.sender;
@@ -181,7 +174,6 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         ERC20Burnable(address(hahaToken)).burnFrom(player, mintCost);
         emit CostBurned(player, mintCost, "Minting a new Gotchi");
 
-
         // Mint a new Gotchi for the player with initial stats
         uint256 newTokenId = _nextTokenId;
         _safeMint(to, newTokenId);
@@ -208,9 +200,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
     
     /**
-    * @dev Checks if a MamaGotchi is alive by evaluating its health, happiness, and death timestamp.
+    * @dev Checks if a MamaGotchi is still alive based on its health, happiness, and death timestamp.
     * @param tokenId The ID of the MamaGotchi to check.
-    * @return True if the MamaGotchi is alive, false otherwise.
+    * @return True if the MamaGotchi is alive, otherwise false.
     */
     function isAlive(uint256 tokenId) public view returns (bool) {
         Gotchi memory gotchi = gotchiStats[tokenId];
@@ -218,36 +210,10 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
     
     /**
-    * @dev Marks a MamaGotchi as deceased and optionally saves its timeAlive score to the leaderboard.
-    * Only callable by the contract owner.
-    * @param tokenId The ID of the MamaGotchi to mark as dead.
-    * @param saveOnDeath Boolean flag indicating whether to save the score upon death.
-    */
-    function setDeath(uint256 tokenId, bool saveOnDeath) external onlyOwner nonReentrant {
-        uint256 currentTime = block.timestamp;
-        require(ownerOf(tokenId) != address(0), "Token does not exist");
-        Gotchi storage gotchi = gotchiStats[tokenId];
-        require(gotchi.health == 0 || gotchi.happiness == 0, "MamaGotchi isn't dead! Be a Good Kid and treat her well!");
-
-        gotchi.deathTimestamp = currentTime;
-
-        address player = ownerOf(tokenId);
-        uint256 timeAliveAtDeath = gotchi.timeAlive + (currentTime - gotchi.lastInteraction);
-
-        // Update high score if saveOnDeath is true
-        if (saveOnDeath && timeAliveAtDeath > playerHighScores[player]) {
-            playerHighScores[player] = timeAliveAtDeath;
-            emit LeaderboardUpdated(player, timeAliveAtDeath, "AllTimeHighRound");
-        }
-
-        emit GotchiDied(player, tokenId);
-    }
-
-    /**
-    * @dev Updates the timeAlive counter and applies decay for health and happiness.
-    * Decay is applied based on time elapsed since the last interaction or sleep start.
-    * Marks the MamaGotchi as dead if health or happiness reaches zero.
-    * @param tokenId The ID of the MamaGotchi.
+    * @dev Updates the `timeAlive` counter and applies health and happiness decay.
+    * Automatically marks the MamaGotchi as dead if either health or happiness reaches zero.
+    * Handles both sleeping and awake states.
+    * @param tokenId The ID of the MamaGotchi to update.
     */
     function updateTimeAlive(uint256 tokenId) internal {
         address player = msg.sender; 
@@ -358,7 +324,6 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
             // Zero health and happiness if MamaGotchi dies
             zeroStatsIfDead(gotchi);
 
-
             // Check if MamaGotchi dies during decay
             if (gotchi.health == 0 || gotchi.happiness == 0) {
                 gotchi.timeAlive += timeUntilDeath;
@@ -396,10 +361,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Internal function to burn $HAHA tokens for a specific gameplay action.
-    * Verifies allowance and balance before burning.
+    * @dev Burns $HAHA tokens for specific gameplay actions. Validates allowance and balance before burning.
     * @param amount The amount of $HAHA tokens to burn.
-    * @param action A description of the action requiring token burning (used in revert messages).
+    * @param action A description of the action requiring the token burn.
     */
     function requireAndBurnTokens(uint256 amount, string memory action) internal {
         address player = msg.sender; 
@@ -412,22 +376,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Feeds a MamaGotchi, increasing its health if cooldown has elapsed and it is not asleep.
-    * This function also updates `timeAlive` and applies any necessary health and happiness decay.
-    * Emits events to inform the UI about the updated health, happiness, and timeAlive stats.
-    *
-    * Requirements:
-    * - The caller must own the specified MamaGotchi (`Not your MamaGotchi`).
-    * - The MamaGotchi must be alive (`MamaGotchi is dead!`).
-    * - The MamaGotchi must not be asleep (`MamaGotchi is asleep!`).
-    * - The cooldown period for feeding must have elapsed (`MamaGotchi says: I'm full!`).
-    * - The caller must have sufficient $HAHA tokens approved and available for feeding.
-    *
-    * Emits:
-    * - `GotchiFed` with updated health, happiness, and timeAlive stats.
-    * - `InsufficientHAHA` if the caller's $HAHA balance is insufficient.
-    * - `BurnApprovalRequired` if the caller has not approved enough $HAHA tokens for the contract.
-    *
+    * @dev Feeds a MamaGotchi, boosting its health and updating its `timeAlive`.
+    * Applies decay before the action and validates cooldown and other conditions.
+    * Emits relevant events to reflect state changes.
     * @param tokenId The ID of the MamaGotchi being fed.
     */
     function feed(uint256 tokenId) external nonReentrant {
@@ -455,7 +406,6 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         requireAndBurnTokens(feedCost, "feeding");
         emit CostBurned(player, feedCost, "Feeding Gotchi");
 
-
         // State change: apply health boost and update feed time
         gotchi.health = gotchi.health + feedHealthBoost > MAX_HEALTH ? MAX_HEALTH : gotchi.health + feedHealthBoost;
         gotchi.lastFeedTime = currentTime;
@@ -466,21 +416,9 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
    /**
-    * @dev Plays with a MamaGotchi, increasing its happiness if cooldown has elapsed and it is not asleep.
-    * Updates `timeAlive` and applies necessary health and happiness decay. Emits events to inform the UI
-    * about state changes following gameplay interactions.
-    *
-    * Requirements:
-    * - The caller must own the specified MamaGotchi (`Not your MamaGotchi`).
-    * - The MamaGotchi must be alive (`MamaGotchi is dead!`).
-    * - The MamaGotchi must not be asleep (`MamaGotchi is asleep!`).
-    * - The cooldown period for playing must have elapsed (`MamaGotchi says: I'm tired now!`).
-    * - The caller must have sufficient $HAHA tokens approved and available for playing.
-    *
-    * Emits:
-    * - `GotchiPlayed` with updated health, happiness, and timeAlive stats if the action is successful.
-    * - `GotchiDied` if the Gotchi dies during post-decay validation.
-    *
+    * @dev Plays with a MamaGotchi, boosting its happiness and updating its `timeAlive`.
+    * Applies decay and validates cooldown and state conditions.
+    * Emits events to reflect updated stats and state changes.
     * @param tokenId The ID of the MamaGotchi being played with.
     */
     function play(uint256 tokenId) external nonReentrant {
@@ -507,7 +445,6 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         requireAndBurnTokens(playCost, "playing");
         emit CostBurned(player, playCost, "Playing with Gotchi");
         
-
         // Apply the play boost to happiness
         gotchi.happiness = gotchi.happiness + playHappinessBoost > MAX_HAPPINESS ? MAX_HAPPINESS : gotchi.happiness + playHappinessBoost;
         gotchi.lastPlayTime = currentTime;
@@ -517,21 +454,10 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
  
     /**
-    * @dev Puts a MamaGotchi to sleep, pausing decay, if cooldown has elapsed and it is not already sleeping.
-    * Updates `timeAlive` and applies necessary health and happiness decay.
-    *
-    * Requirements:
-    * - The caller must own the specified MamaGotchi (`Not your MamaGotchi`).
-    * - The MamaGotchi must be alive (`MamaGotchi is dead!`).
-    * - The MamaGotchi must not be already sleeping (`MamaGotchi says: I'm already in dreamland, shhh!`).
-    * - The cooldown period for sleeping must have elapsed (`MamaGotchi says: I'm not sleepy!`).
-    * - The caller must have sufficient $HAHA tokens approved and available for sleeping.
-    *
-    * Emits:
-    * - `GotchiSleeping` with updated health, happiness, timeAlive, and sleep start time if the action is successful.
-    * - `GotchiDied` if the Gotchi dies during post-decay validation.
-    *
-    * @param tokenId The ID of the MamaGotchi to put to sleep.
+    * @dev Puts a MamaGotchi to sleep, pausing decay and updating its state.
+    * Validates cooldown, $HAHA token balance, and other conditions before initiating sleep.
+    * Emits events for state updates.
+    * @param tokenId The ID of the MamaGotchi being put to sleep.
     */
     function sleep(uint256 tokenId) external nonReentrant {
         address player = msg.sender;
@@ -567,9 +493,8 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Wakes a MamaGotchi, checking if it survived the sleep period based on health and happiness decay.
-    * If death occurs during sleep, sets death timestamp and marks as no longer sleeping. If the Gotchi survives,
-    * simply updates its awake state.
+    * @dev Wakes a sleeping MamaGotchi and checks for decay effects during the sleep period.
+    * Updates the state and emits events for either survival or death.
     * @param tokenId The ID of the MamaGotchi to wake up.
     */
     function wake(uint256 tokenId) external nonReentrant {
@@ -601,10 +526,10 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         emit GotchiAwake(player, tokenId, gotchi.health, gotchi.happiness, gotchi.timeAlive, currentTime);
     }
    
-   /**
-    * @dev Saves the current timeAlive score to the leaderboard if it is the player's highest score.
-    * Can be called during gameplay or when a MamaGotchi dies.
-    * @param tokenId The ID of the MamaGotchi.
+    /**
+    * @dev Saves the current `timeAlive` score of a MamaGotchi to the leaderboard if it is the player's highest score.
+    * Updates `lastSaveTime` and emits relevant events for state and leaderboard updates.
+    * @param tokenId The ID of the MamaGotchi whose score is being saved.
     */
     function _saveToLeaderboard(uint256 tokenId) internal {
         address player = msg.sender;
@@ -650,8 +575,8 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Allows players to manually save their timeAlive score to the leaderboard.
-    * Calls the internal _saveToLeaderboard function.
+    * @dev Allows a player to manually save their MamaGotchi's `timeAlive` score to the leaderboard.
+    * Calls the internal `_saveToLeaderboard` function for processing.
     * @param tokenId The ID of the MamaGotchi.
     */
     function manualSaveToLeaderboard(uint256 tokenId) external nonReentrant {
@@ -688,24 +613,29 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         emit CostUpdated("PlayCost", newPlayCost);
     }
 
+    /**
+    * @dev Updates the sleep cost for a MamaGotchi.
+    * Can only be called by the contract owner.
+    * @param newSleepCost The updated sleep cost in $HAHA tokens.
+    */
     function setSleepCost(uint256 newSleepCost) external onlyOwner {
         sleepCost = newSleepCost;
         emit CostUpdated("SleepCost", newSleepCost);
     }
 
     /**
-    * @dev Sets the health boost value for feeding a Gotchi.
+    * @dev Updates the health boost value for feeding a MamaGotchi.
     * Can only be called by the contract owner.
-    * @param newFeedHealthBoost The new health boost value for feeding.
+    * @param newFeedHealthBoost The updated health boost value.
     */
     function setFeedHealthBoost(uint256 newFeedHealthBoost) external onlyOwner {
         feedHealthBoost = newFeedHealthBoost;
     }
 
     /**
-    * @dev Sets the happiness boost value for playing with a Gotchi.
+    * @dev Updates the happiness boost value for playing with a MamaGotchi.
     * Can only be called by the contract owner.
-    * @param newPlayHappinessBoost The new happiness boost value for playing.
+    * @param newPlayHappinessBoost The updated happiness boost value.
     */
     function setPlayHappinessBoost(uint256 newPlayHappinessBoost) external onlyOwner {
         playHappinessBoost = newPlayHappinessBoost;
@@ -728,9 +658,8 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Calculates the health decay over a specified duration using the defined `HEALTH_DECAY_RATE`.
-    * This function converts the duration into decay points and applies it based on the rate.
-    * @param duration The duration in seconds over which decay is calculated.
+    * @dev Calculates the health decay for a given duration based on the defined decay rate.
+    * @param duration The duration in seconds for which decay is calculated.
     * @return The calculated health decay amount.
     */
     function calculateHealthDecay(uint256 duration) internal pure returns (uint256) {
@@ -739,9 +668,8 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
     
     /**
-    * @dev Calculates the happiness decay over a specified duration using the defined `HAPPINESS_DECAY_RATE`.
-    * This function converts the duration into decay points and applies it based on the rate.
-    * @param duration The duration in seconds over which decay is calculated.
+    * @dev Calculates the happiness decay for a given duration based on the defined decay rate.
+    * @param duration The duration in seconds for which decay is calculated.
     * @return The calculated happiness decay amount.
     */
     function calculateHappinessDecay(uint256 duration) internal pure returns (uint256) {
@@ -750,10 +678,10 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
     }
 
     /**
-    * @dev Calculates the time remaining until a MamaGotchi’s health or happiness reaches zero based on decay rates.
-    * Returns the shorter of the two times calculated for health and happiness, as death occurs when either reaches zero.
-    * @param tokenId The ID of the MamaGotchi to calculate time until death.
-    * @return The estimated time in seconds until death occurs.
+    * @dev Calculates the time remaining until a MamaGotchi's health or happiness reaches zero.
+    * Returns the shorter of the two decay times.
+    * @param tokenId The ID of the MamaGotchi.
+    * @return The estimated time in seconds until death.
     */
      function calculateTimeUntilDeath(uint256 tokenId) internal view returns (uint256) {
         Gotchi storage gotchi = gotchiStats[tokenId];
@@ -768,11 +696,26 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         return healthDecayTime < happinessDecayTime ? healthDecayTime : happinessDecayTime;
     }
     
+    /**
+    * @dev Calculates both health and happiness decay for a given duration.
+    * @param duration The duration in seconds for which decay is calculated.
+    * @return decayHealth The calculated health decay.
+    * @return decayHappiness The calculated happiness decay.
+    */
     function calculateDecay(uint256 duration) internal pure returns (uint256 decayHealth, uint256 decayHappiness) {
         decayHealth = calculateHealthDecay(duration);
         decayHappiness = calculateHappinessDecay(duration);
     }
 
+    /**
+    * @dev Determines the time remaining until a MamaGotchi's health or happiness reaches zero, given current decay values.
+    * @param decayHealth The calculated health decay value.
+    * @param health The current health of the MamaGotchi.
+    * @param decayHappiness The calculated happiness decay value.
+    * @param happiness The current happiness of the MamaGotchi.
+    * @param tokenId The ID of the MamaGotchi.
+    * @return The estimated time in seconds until death.
+    */
     function determineTimeUntilDeath(
         uint256 decayHealth,
         uint256 health,
@@ -785,6 +728,12 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
             : 0;
     }
 
+    /**
+    * @dev Applies calculated decay values to a MamaGotchi's health and happiness, ensuring they do not drop below zero.
+    * @param gotchi The MamaGotchi's storage reference.
+    * @param decayHealth The calculated health decay.
+    * @param decayHappiness The calculated happiness decay.
+    */
     function applyDecayToStats(Gotchi storage gotchi, uint256 decayHealth, uint256 decayHappiness) internal {
         // Apply decay to health, ensuring it doesn't go below zero
         gotchi.health = gotchi.health > decayHealth ? gotchi.health - decayHealth : 0;
@@ -793,6 +742,10 @@ contract MamaGotchiGameMinato is ERC721, ERC721Burnable, Ownable, ReentrancyGuar
         gotchi.happiness = gotchi.happiness > decayHappiness ? gotchi.happiness - decayHappiness : 0;
     }
 
+    /**
+    * @dev Sets health and happiness to zero if either is already zero, marking the MamaGotchi as dead.
+    * @param gotchi The MamaGotchi's storage reference.
+    */
     function zeroStatsIfDead(Gotchi storage gotchi) internal {
         if (gotchi.health == 0 || gotchi.happiness == 0) {
             gotchi.health = 0;
