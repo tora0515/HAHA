@@ -4,6 +4,25 @@ import { ethers } from "ethers";
 import faucetContract from "./ethereum/faucet";
 import logo from "./images/mamaround.png";
 
+// Utility function to detect and prioritize EVM-compatible wallets
+const getEVMProvider = () => {
+  if (typeof window.ethereum !== "undefined") {
+    // Check if multiple providers exist
+    if (window.ethereum.providers?.length) {
+      // Filter for EVM-compatible wallets
+      const evmProviders = window.ethereum.providers.filter(
+        (provider) => provider.request
+      );
+      return evmProviders.length > 0 ? evmProviders[0] : null;
+    } else {
+      // Single provider detected
+      return window.ethereum.request ? window.ethereum : null;
+    }
+  }
+  console.log("No EVM-compatible wallet detected.");
+  return null;
+};
+
 function App() {
   const [walletAddress, setWalletAddress] = useState("");
   const [signer, setSigner] = useState();
@@ -15,40 +34,42 @@ function App() {
   const linkab = "https://soneium-minato.blockscout.com/tx/";
 
   const getCurrentWalletConnected = useCallback(async () => {
-    if (typeof window != "undefined" && typeof window.ethereum != "undefined") {
+    const provider = getEVMProvider();
+    if (provider) {
       try {
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        const accounts = await provider.send("eth_accounts", []);
+        const web3Provider = new ethers.providers.Web3Provider(provider);
+        const accounts = await web3Provider.send("eth_accounts", []);
         if (accounts.length > 0) {
-          setSigner(provider.getSigner());
-          setFcContract(faucetContract(provider));
+          setSigner(web3Provider.getSigner());
+          setFcContract(faucetContract(web3Provider));
           setWalletAddress(accounts[0]);
-          console.log(accounts[0]);
+          console.log("Wallet already connected:", accounts[0]);
         } else {
-          console.log("Connect by using the Connect Wallet button");
+          console.log("Please connect your wallet.");
         }
       } catch (err) {
-        console.error(err.message);
+        console.error("Error getting current wallet:", err.message);
       }
     } else {
-      console.log("Please install MetaMask");
+      console.log("Please install or enable an EVM-compatible wallet.");
     }
-  }, []); // Stable since it depends on no external variables
+  }, []);
 
   const addWalletListener = useCallback(() => {
-    if (typeof window != "undefined" && typeof window.ethereum != "undefined") {
-      window.ethereum.on("accountsChanged", (accounts) => {
+    const provider = getEVMProvider();
+    if (provider) {
+      provider.on("accountsChanged", (accounts) => {
         if (accounts.length > 0) {
           setWalletAddress(accounts[0]);
-          console.log(accounts[0]);
+          console.log("Account changed:", accounts[0]);
         } else {
           disconnectWallet();
         }
       });
     } else {
-      console.log("Please install MetaMask");
+      console.log("No EVM-compatible wallet to listen to.");
     }
-  }, []); // Stable since it depends on no external variables
+  }, []);
 
   useEffect(() => {
     getCurrentWalletConnected();
@@ -56,25 +77,22 @@ function App() {
   }, [getCurrentWalletConnected, addWalletListener]);
 
   const connectWallet = async () => {
-    if (typeof window != "undefined" && typeof window.ethereum != "undefined") {
+    const provider = getEVMProvider();
+    if (provider) {
       try {
-        /* get provider */
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
-        /* get accounts */
-        const accounts = await provider.send("eth_requestAccounts", []);
-        /* get signer */
-        setSigner(provider.getSigner());
-        /* local contract instance */
-        setFcContract(faucetContract(provider));
-
+        const web3Provider = new ethers.providers.Web3Provider(provider);
+        const accounts = await web3Provider.send("eth_requestAccounts", []);
+        setSigner(web3Provider.getSigner());
+        setFcContract(faucetContract(web3Provider));
         setWalletAddress(accounts[0]);
-        console.log(accounts[0]);
+        console.log("Connected wallet:", accounts[0]);
       } catch (err) {
-        console.error(err.message);
+        console.error("Error connecting wallet:", err.message);
+        setWithdrawError(`Connection failed: ${err.message}`);
       }
     } else {
-      /* MetaMask is not installed */
-      console.log("Please install MetaMask");
+      console.log("Please install or enable an EVM-compatible wallet.");
+      setWithdrawError("No EVM-compatible wallet detected.");
     }
   };
 
