@@ -4,6 +4,8 @@ import { calculateDecay } from '../utils';
 import { HEALTH_DECAY_RATE } from '../constants';
 
 const HealthBar = ({ initialHealth = 0, lastInteraction }) => {
+  console.log('HealthBar Props:', { initialHealth, lastInteraction });
+
   const [currentHealth, setCurrentHealth] = useState(initialHealth);
 
   useEffect(() => {

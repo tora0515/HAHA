@@ -47,6 +47,8 @@ const WalletConnect = ({
         const isAlive = await gameContract.isAlive(tokenId);
         const gotchiStats = await gameContract.gotchiStats(tokenId);
 
+        console.log('Fetched Gotchi Stats in WalletConnect:', gotchiStats);
+
         return {
           isAlive,
           health: gotchiStats.health.toString(),
