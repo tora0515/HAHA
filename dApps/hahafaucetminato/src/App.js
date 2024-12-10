@@ -4,6 +4,19 @@ import { ethers } from "ethers";
 import faucetContract from "./ethereum/faucet";
 import logo from "./images/mamaround.png";
 
+const EXPECTED_CHAIN_ID = "0x79a"; // Replace with your network's chain ID in hexadecimal
+const NETWORK_PARAMS = {
+  chainId: "0x79a", // Minato Testnet's chain ID
+  chainName: "Minato Testnet",
+  nativeCurrency: {
+    name: "Minato",
+    symbol: "ETH", // Replace with the actual native token symbol
+    decimals: 18,
+  },
+  rpcUrls: ["https://rpc.minato.soneium.org"], // Replace with your RPC URL
+  blockExplorerUrls: ["https://soneium-minato.blockscout.com/"], // Replace with your block explorer URL
+};
+
 // Utility function to detect and prioritize EVM-compatible wallets
 const getEVMProvider = () => {
   if (typeof window.ethereum !== "undefined") {
@@ -32,6 +45,44 @@ function App() {
   const [transactionData, setTransactionData] = useState("");
 
   const linkab = "https://soneium-minato.blockscout.com/tx/";
+
+  const switchNetwork = async () => {
+    const provider = getEVMProvider();
+    if (!provider) {
+      console.error("No EVM-compatible wallet detected.");
+      return;
+    }
+
+    try {
+      // Attempt to switch to the Minato Testnet
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: NETWORK_PARAMS.chainId }],
+      });
+      setWithdrawError(""); // Clear errors if the switch succeeds
+    } catch (switchError) {
+      if (switchError.code === 4902) {
+        // If the network is not added, prompt the user to add it
+        try {
+          await provider.request({
+            method: "wallet_addEthereumChain",
+            params: [NETWORK_PARAMS],
+          });
+          setWithdrawError(""); // Clear errors if the network is successfully added
+        } catch (addError) {
+          console.error("Failed to add network:", addError.message);
+          setWithdrawError(
+            `Failed to add the Minato Testnet. Please add it manually.`
+          );
+        }
+      } else {
+        console.error("Failed to switch network:", switchError.message);
+        setWithdrawError(
+          `Failed to switch to the Minato Testnet. Please switch manually.`
+        );
+      }
+    }
+  };
 
   const getCurrentWalletConnected = useCallback(async () => {
     const provider = getEVMProvider();
@@ -82,9 +133,21 @@ function App() {
       try {
         const web3Provider = new ethers.providers.Web3Provider(provider);
         const accounts = await web3Provider.send("eth_requestAccounts", []);
+
+        const network = await web3Provider.getNetwork();
+        if (network.chainId !== parseInt(EXPECTED_CHAIN_ID, 16)) {
+          // Prompt the user to switch to the correct network
+          setWithdrawError(`Wrong network! Please switch to Minato Testnet.`);
+          setWithdrawSuccess(""); // Clear success messages
+          await switchNetwork(); // Handle switching or adding the network
+          return; // Stop further execution until the correct network is active
+        }
+
+        // Successfully connected to the correct network
         setSigner(web3Provider.getSigner());
         setFcContract(faucetContract(web3Provider));
         setWalletAddress(accounts[0]);
+        setWithdrawError(""); // Clear any previous errors
         console.log("Connected wallet:", accounts[0]);
       } catch (err) {
         console.error("Error connecting wallet:", err.message);
@@ -175,12 +238,25 @@ function App() {
             <p>MAMA's on Minato! Get 100m $HAHA per day.</p>
             <div className="mt-5">
               {withdrawError && (
-                <div class="withdraw-error">{withdrawError}</div>
+                <div className="withdraw-error">
+                  {withdrawError}{" "}
+                  {withdrawError.includes("add it manually") && (
+                    <a
+                      href="https://soneium-minato.blockscout.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="has-text-link"
+                    >
+                      Add Minato Testnet
+                    </a>
+                  )}
+                </div>
               )}
               {withdrawSuccess && (
-                <div class="withdraw-success">{withdrawSuccess}</div>
-              )}{" "}
+                <div className="withdraw-success">{withdrawSuccess}</div>
+              )}
             </div>
+
             <div className="box address-box">
               <div className="columns">
                 <div className="column is-four-fifths">
