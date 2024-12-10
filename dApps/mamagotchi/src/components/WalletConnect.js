@@ -6,6 +6,24 @@ import MamaGotchiABI from '../MamaGotchiGameMinato_ABI.json';
 // Contract address for MamaGotchiGameMinato
 const contractAddress = '0x9F2609A76E9AF431FCa6bbbdd28BE92d2A283F2E';
 
+const getEVMProvider = () => {
+  if (typeof window.ethereum !== 'undefined') {
+    // Check if multiple providers exist
+    if (window.ethereum.providers?.length) {
+      // Filter for EVM-compatible wallets
+      const evmProviders = window.ethereum.providers.filter(
+        (provider) => provider.request
+      );
+      return evmProviders.length > 0 ? evmProviders[0] : null;
+    } else {
+      // Single provider detected
+      return window.ethereum.request ? window.ethereum : null;
+    }
+  }
+  console.log('No EVM-compatible wallet detected.');
+  return null;
+};
+
 // Expected Network Configuration
 const EXPECTED_CHAIN_ID = '0x79a'; // Minato Testnet Chain ID in hexadecimal
 const NETWORK_PARAMS = {
@@ -85,14 +103,15 @@ const WalletConnect = ({
   );
 
   const switchNetwork = async () => {
-    if (!window.ethereum) {
+    const ethereumProvider = getEVMProvider(); // Use the utility function
+    if (!ethereumProvider) {
       console.error('No Ethereum wallet detected.');
       return false;
     }
 
     try {
       // Attempt to switch to the Minato Testnet
-      await window.ethereum.request({
+      await ethereumProvider.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: NETWORK_PARAMS.chainId }],
       });
@@ -101,7 +120,7 @@ const WalletConnect = ({
       if (switchError.code === 4902) {
         // The chain has not been added to MetaMask, try to add it
         try {
-          await window.ethereum.request({
+          await ethereumProvider.request({
             method: 'wallet_addEthereumChain',
             params: [NETWORK_PARAMS],
           });
@@ -121,9 +140,10 @@ const WalletConnect = ({
    * Connect Wallet and Initialize Contract Interaction
    */
   const connectWallet = async () => {
-    if (window.ethereum) {
+    const ethereumProvider = getEVMProvider(); // Use the utility function
+    if (ethereumProvider) {
       try {
-        let provider = new ethers.BrowserProvider(window.ethereum); // Use 'let' instead of 'const'
+        let provider = new ethers.BrowserProvider(ethereumProvider); // Use selected provider
         let signer = await provider.getSigner();
         const accounts = await provider.send('eth_requestAccounts', []);
 
@@ -146,7 +166,7 @@ const WalletConnect = ({
             return;
           } else {
             // After switching, update the provider and signer
-            provider = new ethers.BrowserProvider(window.ethereum);
+            provider = new ethers.BrowserProvider(ethereumProvider);
             signer = await provider.getSigner();
           }
         }
@@ -177,9 +197,10 @@ const WalletConnect = ({
 
   const reconnectWallet = useCallback(
     async (savedWallet) => {
-      if (window.ethereum) {
+      const ethereumProvider = getEVMProvider(); // Use the utility function
+      if (ethereumProvider) {
         try {
-          let provider = new ethers.BrowserProvider(window.ethereum); // Use 'let'
+          let provider = new ethers.BrowserProvider(ethereumProvider); // Use selected provider
           let signer = await provider.getSigner();
 
           const accounts = await provider.send('eth_accounts', []);
@@ -203,7 +224,7 @@ const WalletConnect = ({
               return;
             } else {
               // After switching, update the provider and signer
-              provider = new ethers.BrowserProvider(window.ethereum);
+              provider = new ethers.BrowserProvider(ethereumProvider);
               signer = await provider.getSigner();
             }
           }
@@ -236,7 +257,8 @@ const WalletConnect = ({
 
   // Event listener for wallet changes
   useEffect(() => {
-    if (window.ethereum) {
+    const ethereumProvider = getEVMProvider(); // Use the utility function
+    if (ethereumProvider) {
       const handleAccountsChanged = (accounts) => {
         if (accounts.length === 0) {
           // Wallet disconnected
@@ -247,11 +269,11 @@ const WalletConnect = ({
       };
 
       // Listen for account changes
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
+      ethereumProvider.on('accountsChanged', handleAccountsChanged);
 
       return () => {
         // Cleanup listener
-        window.ethereum.removeListener(
+        ethereumProvider.removeListener(
           'accountsChanged',
           handleAccountsChanged
         );
@@ -260,23 +282,20 @@ const WalletConnect = ({
   }, [onGotchiData, onWalletConnect]);
 
   useEffect(() => {
-    if (window.ethereum) {
+    const ethereumProvider = getEVMProvider();
+    if (ethereumProvider) {
       const handleChainChanged = async (chainId) => {
         console.log(`Network changed to ${chainId}`);
 
         if (chainId !== EXPECTED_CHAIN_ID) {
-          // Notify parent component of the network issue
           alert(
             `You switched to a different network. Please switch back to Minato Testnet.`
           );
-
-          // Reset the state in App.js via the provided props
           onGotchiData(defaultGotchiData);
           onWalletConnect(false);
         } else {
-          // If the user switches back to Minato, reconnect
           try {
-            const provider = new ethers.BrowserProvider(window.ethereum);
+            let provider = new ethers.BrowserProvider(ethereumProvider);
             const accounts = await provider.send('eth_accounts', []);
             if (accounts.length > 0) {
               const signer = await provider.getSigner();
@@ -285,8 +304,6 @@ const WalletConnect = ({
                 MamaGotchiABI,
                 signer
               );
-
-              // Update App.js with the reconnected contract and Gotchi data
               onContract(gameContract);
               const initialGotchiData = await fetchGotchiData(
                 gameContract,
@@ -301,12 +318,10 @@ const WalletConnect = ({
         }
       };
 
-      // Listen for the 'chainChanged' event
-      window.ethereum.on('chainChanged', handleChainChanged);
+      ethereumProvider.on('chainChanged', handleChainChanged);
 
       return () => {
-        // Cleanup listener when the component unmounts
-        window.ethereum.removeListener('chainChanged', handleChainChanged);
+        ethereumProvider.removeListener('chainChanged', handleChainChanged);
       };
     }
   }, [onGotchiData, onWalletConnect, onContract, fetchGotchiData]);
