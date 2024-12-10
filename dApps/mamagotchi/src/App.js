@@ -4,6 +4,7 @@ import HealthBar from './components/HealthBar';
 import FeedButton from './components/FeedButton';
 
 function App() {
+  const [error, setError] = useState(null); // State for error messages
   const [gotchiData, setGotchiData] = useState(defaultGotchiData); // Centralized state for Gotchi data
   const [isWalletConnected, setIsWalletConnected] = useState(false);
   const [contract, setContract] = useState(null); // Blockchain contract instance
@@ -21,6 +22,16 @@ function App() {
   return (
     <div>
       <h1>MamaGotchi</h1>
+
+      {/* Display error message if there is one */}
+      {error && (
+        <p
+          className="error-message"
+          style={{ color: 'red', fontWeight: 'bold' }}
+        >
+          {error}
+        </p>
+      )}
 
       {!isWalletConnected ? (
         <p>Please connect your wallet to start playing MamaGotchi!</p>
@@ -49,6 +60,7 @@ function App() {
         onWalletConnect={setIsWalletConnected}
         onTokenId={setTokenId}
         onContract={setContract}
+        onError={setError}
       />
     </div>
   );
