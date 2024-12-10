@@ -46,10 +46,37 @@ function App() {
 
   const linkab = "https://soneium-minato.blockscout.com/tx/";
 
+  const addTokenToWallet = async () => {
+    const provider = getEVMProvider();
+    if (!provider) {
+      console.error("No EVM-compatible wallet detected.");
+      setWithdrawError("No EVM-compatible wallet detected.");
+      return;
+    }
+
+    try {
+      await provider.request({
+        method: "wallet_watchAsset",
+        params: {
+          type: "ERC20",
+          options: {
+            address: "0x38611615d7A357B8C88523bd02d85375fAF1E8D1",
+            symbol: "HAHA",
+            decimals: 18,
+          },
+        },
+      });
+      console.log("Token added successfully to wallet.");
+    } catch (error) {
+      console.error("Failed to add token to wallet:", error.message);
+    }
+  };
+
   const switchNetwork = async () => {
     const provider = getEVMProvider();
     if (!provider) {
       console.error("No EVM-compatible wallet detected.");
+      setWithdrawError("No EVM-compatible wallet detected.");
       return;
     }
 
@@ -62,7 +89,7 @@ function App() {
       setWithdrawError(""); // Clear errors if the switch succeeds
     } catch (switchError) {
       if (switchError.code === 4902) {
-        // If the network is not added, prompt the user to add it
+        // If the network is not added, attempt to add it
         try {
           await provider.request({
             method: "wallet_addEthereumChain",
@@ -114,8 +141,14 @@ function App() {
           setWalletAddress(accounts[0]);
           console.log("Account changed:", accounts[0]);
         } else {
+          // Wallet disconnected
           disconnectWallet();
         }
+      });
+
+      provider.on("disconnect", () => {
+        console.log("Wallet disconnected");
+        disconnectWallet();
       });
     } else {
       console.log("No EVM-compatible wallet to listen to.");
@@ -126,6 +159,49 @@ function App() {
     getCurrentWalletConnected();
     addWalletListener();
   }, [getCurrentWalletConnected, addWalletListener]);
+
+  useEffect(() => {
+    const provider = getEVMProvider(); // Ensure the correct provider is used
+    if (provider) {
+      const handleChainChanged = async (chainId) => {
+        console.log(`Network changed to ${chainId}`);
+
+        if (chainId !== EXPECTED_CHAIN_ID) {
+          // Notify the user and reset the state
+          setWithdrawError(
+            "You switched to a different network. Please switch back to Minato Testnet."
+          );
+          setWalletAddress(""); // Clear wallet address
+          setSigner(null); // Clear signer
+          setFcContract(null); // Clear contract instance
+        } else {
+          // Reinitialize the wallet connection
+          try {
+            const web3Provider = new ethers.providers.Web3Provider(provider);
+            const accounts = await web3Provider.send("eth_accounts", []);
+            if (accounts.length > 0) {
+              const signer = web3Provider.getSigner();
+              const fcContractInstance = faucetContract(web3Provider);
+
+              setSigner(signer);
+              setFcContract(fcContractInstance);
+              setWalletAddress(accounts[0]);
+              setWithdrawError(""); // Clear any previous errors
+              console.log("Reconnected wallet:", accounts[0]);
+            }
+          } catch (error) {
+            console.error("Error reconnecting after network change:", error);
+          }
+        }
+      };
+
+      provider.on("chainChanged", handleChainChanged);
+
+      return () => {
+        provider.removeListener("chainChanged", handleChainChanged);
+      };
+    }
+  }, []);
 
   const connectWallet = async () => {
     const provider = getEVMProvider();
@@ -236,6 +312,8 @@ function App() {
           <div className="container has-text-centered main-content">
             <h1 className="title is-1">Faucet</h1>
             <p>MAMA's on Minato! Get 100m $HAHA per day.</p>
+            <p>CA: 0x38611615d7A357B8C88523bd02d85375fAF1E8D1</p>
+
             <div className="mt-5">
               {withdrawError && (
                 <div className="withdraw-error">
@@ -296,6 +374,20 @@ function App() {
                   </p>
                 </div>
               </article>
+              <div>
+                <p>
+                  <button
+                    className="button is-link is-medium"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      addTokenToWallet();
+                    }}
+                    disabled={!walletAddress}
+                  >
+                    Add $HAHA to your wallet
+                  </button>
+                </p>
+              </div>
             </div>
           </div>
         </div>
