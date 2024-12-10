@@ -6,13 +6,14 @@ import MamaGotchiABI from '../MamaGotchiGameMinato_ABI.json';
 // Contract address for MamaGotchiGameMinato
 const contractAddress = '0x9F2609A76E9AF431FCa6bbbdd28BE92d2A283F2E';
 
+// Expected Network Configuration
 const EXPECTED_CHAIN_ID = '0x79a'; // Minato Testnet Chain ID in hexadecimal
 const NETWORK_PARAMS = {
   chainId: '0x79a',
   chainName: 'Minato Testnet',
   nativeCurrency: {
     name: 'Minato',
-    symbol: 'ETH',
+    symbol: 'ETH', // Replace with actual symbol if different
     decimals: 18,
   },
   rpcUrls: ['https://rpc.minato.soneium.org'],
@@ -40,7 +41,6 @@ const WalletConnect = ({
   onWalletConnect,
   onTokenId,
   onContract,
-  onError, // New prop for error handling
 }) => {
   const [walletAddress, setWalletAddress] = useState(null);
 
@@ -85,47 +85,35 @@ const WalletConnect = ({
   );
 
   const switchNetwork = async () => {
-    if (window.ethereum) {
-      try {
-        // Attempt to switch to the Minato Testnet
-        await window.ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: NETWORK_PARAMS.chainId }],
-        });
-        return { success: true, message: 'Switched to Minato Testnet.' };
-      } catch (switchError) {
-        if (switchError.code === 4902) {
-          // If the network is not added, prompt the user to add it
-          try {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [NETWORK_PARAMS],
-            });
-            return {
-              success: true,
-              message: 'Minato Testnet added and switched.',
-            };
-          } catch (addError) {
-            console.error('Failed to add network:', addError.message);
-            return {
-              success: false,
-              message:
-                'Failed to add the Minato Testnet. Please add it manually.',
-            };
-          }
-        } else {
-          console.error('Failed to switch network:', switchError.message);
-          return {
-            success: false,
-            message: 'Failed to switch networks. Please switch manually.',
-          };
+    if (!window.ethereum) {
+      console.error('No Ethereum wallet detected.');
+      return false;
+    }
+
+    try {
+      // Attempt to switch to the Minato Testnet
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: NETWORK_PARAMS.chainId }],
+      });
+      return true;
+    } catch (switchError) {
+      if (switchError.code === 4902) {
+        // The chain has not been added to MetaMask, try to add it
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [NETWORK_PARAMS],
+          });
+          return true;
+        } catch (addError) {
+          console.error('Failed to add the network:', addError);
+          return false;
         }
+      } else {
+        console.error('Failed to switch the network:', switchError);
+        return false;
       }
-    } else {
-      return {
-        success: false,
-        message: 'No Ethereum wallet detected. Please install MetaMask.',
-      };
     }
   };
 
@@ -135,21 +123,31 @@ const WalletConnect = ({
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
+        let provider = new ethers.BrowserProvider(window.ethereum); // Use 'let' instead of 'const'
+        let signer = await provider.getSigner();
         const accounts = await provider.send('eth_requestAccounts', []);
 
         const wallet = accounts[0];
         setWalletAddress(wallet);
         localStorage.setItem('walletAddress', wallet);
 
-        // Check the current network
+        // Check the network
         const network = await provider.getNetwork();
         if (network.chainId !== parseInt(EXPECTED_CHAIN_ID, 16)) {
-          const switchResult = await switchNetwork();
-          if (!switchResult.success) {
-            onError(switchResult.message); // Pass error to App.js
-            return; // Stop further execution if switching failed
+          // Attempt to switch network
+          const switched = await switchNetwork();
+          if (!switched) {
+            // If network switch was unsuccessful, display an error and stop execution
+            alert(
+              'Please switch to the Minato Testnet network in your wallet.'
+            );
+            onGotchiData(defaultGotchiData); // Reset Gotchi data
+            onWalletConnect(false);
+            return;
+          } else {
+            // After switching, update the provider and signer
+            provider = new ethers.BrowserProvider(window.ethereum);
+            signer = await provider.getSigner();
           }
         }
 
@@ -181,8 +179,34 @@ const WalletConnect = ({
     async (savedWallet) => {
       if (window.ethereum) {
         try {
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const signer = await provider.getSigner();
+          let provider = new ethers.BrowserProvider(window.ethereum); // Use 'let'
+          let signer = await provider.getSigner();
+
+          const accounts = await provider.send('eth_accounts', []);
+          if (accounts.length === 0) {
+            // No accounts found, wallet might be locked
+            return;
+          }
+
+          // Check the network
+          const network = await provider.getNetwork();
+          if (network.chainId !== parseInt(EXPECTED_CHAIN_ID, 16)) {
+            // Attempt to switch network
+            const switched = await switchNetwork();
+            if (!switched) {
+              // If network switch was unsuccessful, display an error and stop execution
+              alert(
+                'Please switch to the Minato Testnet network in your wallet.'
+              );
+              onGotchiData(defaultGotchiData); // Reset Gotchi data
+              onWalletConnect(false);
+              return;
+            } else {
+              // After switching, update the provider and signer
+              provider = new ethers.BrowserProvider(window.ethereum);
+              signer = await provider.getSigner();
+            }
+          }
 
           setWalletAddress(savedWallet);
           const gameContract = new ethers.Contract(
@@ -234,6 +258,58 @@ const WalletConnect = ({
       };
     }
   }, [onGotchiData, onWalletConnect]);
+
+  useEffect(() => {
+    if (window.ethereum) {
+      const handleChainChanged = async (chainId) => {
+        console.log(`Network changed to ${chainId}`);
+
+        if (chainId !== EXPECTED_CHAIN_ID) {
+          // Notify parent component of the network issue
+          alert(
+            `You switched to a different network. Please switch back to Minato Testnet.`
+          );
+
+          // Reset the state in App.js via the provided props
+          onGotchiData(defaultGotchiData);
+          onWalletConnect(false);
+        } else {
+          // If the user switches back to Minato, reconnect
+          try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const accounts = await provider.send('eth_accounts', []);
+            if (accounts.length > 0) {
+              const signer = await provider.getSigner();
+              const gameContract = new ethers.Contract(
+                contractAddress,
+                MamaGotchiABI,
+                signer
+              );
+
+              // Update App.js with the reconnected contract and Gotchi data
+              onContract(gameContract);
+              const initialGotchiData = await fetchGotchiData(
+                gameContract,
+                accounts[0]
+              );
+              onGotchiData(initialGotchiData);
+              onWalletConnect(true);
+            }
+          } catch (error) {
+            console.error('Error reconnecting after network change:', error);
+          }
+        }
+      };
+
+      // Listen for the 'chainChanged' event
+      window.ethereum.on('chainChanged', handleChainChanged);
+
+      return () => {
+        // Cleanup listener when the component unmounts
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
+      };
+    }
+  }, [onGotchiData, onWalletConnect, onContract, fetchGotchiData]);
 
   useEffect(() => {
     const savedWallet = localStorage.getItem('walletAddress');
