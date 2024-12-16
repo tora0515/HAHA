@@ -116,3 +116,14 @@ Thumbs.db
 
 # ABI file
 dApps/mamagotchi/src/MamaGotchiGameMinato_ABI.json
+
+# Virtual Environment
+venv/
+
+
+# Input Snapshot CSV
+cvs_tools/test-original-snapshot.csv
+
+# Python Cache Files
+__pycache__/
+*.pyc
