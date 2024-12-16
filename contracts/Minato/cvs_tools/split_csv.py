@@ -36,7 +36,7 @@ for i in range(0, len(df), batch_size):
     batch_filename = os.path.join(output_folder, f"batch_{i // batch_size + 1}.csv")
     
     # Save batch file, ensuring no scientific notation
-    batch.to_csv(batch_filename, index=False, float_format="%.18f")
+    batch.to_csv(batch_filename, index=False, header=False, float_format="%.18f")
     print(f"Created batch file: {batch_filename}")
 
 print(f"Total batches created: {len(df) // batch_size + (1 if len(df) % batch_size > 0 else 0)}")

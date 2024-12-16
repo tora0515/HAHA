@@ -45,7 +45,7 @@ async function main() {
     for (const row of rows) {
       const [address, amount] = row.split(",");
       recipients.push(address.trim());
-      amounts.push(ethers.utils.parseUnits(amount.trim(), 18)); // Adjust decimals as needed
+      amounts.push(ethers.parseUnits(amount.trim(), 18)); // Adjust decimals as needed
     }
 
     // Call batchTransfer
