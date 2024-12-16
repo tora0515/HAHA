@@ -37,30 +37,69 @@ async function main() {
     // Read the batch file
     const filePath = path.join(batchFolder, batchFile);
     const data = fs.readFileSync(filePath, "utf8");
-    const rows = data.trim().split("\n").slice(1); // Skip header
+    const rows = data.trim().split("\n"); // Reads all rows
 
     // Parse wallet addresses and token amounts
     const recipients = [];
     const amounts = [];
-    for (const row of rows) {
-      const [address, amount] = row.split(",");
-      recipients.push(address.trim());
-      amounts.push(ethers.parseUnits(amount.trim(), 18)); // Adjust decimals as needed
+
+    for (const [rowIndex, row] of rows.entries()) {
+      try {
+        const [address, amount] = row.split(",");
+        if (!ethers.isAddress(address.trim())) {
+          console.error(`Invalid address at row ${rowIndex + 1}: ${address}`);
+          continue;
+        }
+        recipients.push(address.trim());
+        amounts.push(ethers.parseUnits(amount.trim(), 18)); // Adjust decimals as needed
+      } catch (error) {
+        console.error(`Error parsing row ${rowIndex + 1}: ${row}`);
+        console.error(error);
+        continue;
+      }
+    }
+
+    // Log the inputs for this batch
+    console.log(`Sending to ${recipients.length} recipients...`);
+    console.log("Recipients:", recipients);
+    console.log(
+      "Amounts:",
+      amounts.map((a) => a.toString())
+    );
+
+    // Validate the batch size
+    if (recipients.length === 0) {
+      console.warn(
+        `Warning: Batch ${batchFile} is empty. Skipping this batch.`
+      );
+      continue;
+    }
+
+    if (recipients.length < 50) {
+      console.warn(
+        `Warning: Batch ${batchFile} has only ${recipients.length} recipients (less than 50). Proceeding anyway.`
+      );
     }
 
     // Call batchTransfer
-    console.log(`Sending to ${recipients.length} recipients...`);
-    const tx = await BatchSender.batchTransfer(
-      tokenAddress,
-      recipients,
-      amounts
-    );
-    const receipt = await tx.wait();
+    try {
+      const tx = await BatchSender.batchTransfer(
+        tokenAddress,
+        recipients,
+        amounts
+      );
+      const receipt = await tx.wait();
 
-    // Log gas usage
-    const gasUsed = receipt.gasUsed.toString();
-    fs.appendFileSync(gasLogFile, `${batchFile},${gasUsed}\n`);
-    console.log(`Batch ${batchFile} processed. Gas used: ${gasUsed}`);
+      // Log gas usage
+      const gasUsed = receipt.gasUsed.toString();
+      fs.appendFileSync(gasLogFile, `${batchFile},${gasUsed}\n`);
+      console.log(`Batch ${batchFile} processed. Gas used: ${gasUsed}`);
+    } catch (error) {
+      console.error(
+        `Error during batch transfer for file ${batchFile}:`,
+        error
+      );
+    }
 
     // Wait before processing the next batch
     if (index < batchFiles.length - 1) {
