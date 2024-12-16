@@ -11,7 +11,7 @@
   "description": "",
   "dependencies": {
     "@openzeppelin/contracts": "^5.1.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.0.8",

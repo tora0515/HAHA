@@ -1,6 +1,6 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("@nomicfoundation/hardhat-ethers");
-require("dotenv").config();
+require("dotenv").config({ path: __dirname + "/.env" });
 require("@nomicfoundation/hardhat-verify");
 
 module.exports = {
