@@ -22,14 +22,14 @@ This document records details of each deployment for HAHA Token and MamaGotchiGa
 
 ---
 
-## Minato Testnet Deployment - HAHA Batch Send Test Token
+## Minato Testnet Deployment - HAHA Batch Send Test Token HMBT
 
 **Date of Deployment**: December 16, 2024
 **Network**: Minato Testnet  
 **Token Address**: 0x1E8893B544CD6fC26BbA141Fdd8e808c1570A2D0  
 **Deployer Address**: 0x1adAF26F6440ab7D7a237b49e1ceEf58f45F902a  
 **Explorer Link**: [View on Minato Explorer](https://soneium-minato.blockscout.com/token/0x1E8893B544CD6fC26BbA141Fdd8e808c1570A2D0?tab=contract)  
-**Initial Supply**: 100 trillion HAHA tokens
+**Initial Supply**: 100 trillion HMBT tokens
 **Gas Used**: Transaction gas used (retrieved from the transaction receipt)
 
 ### Deployment Notes:
@@ -90,6 +90,30 @@ Notes:
 - Deployed and tested for seamless integration with the HAHA token contract.
 - Designed as a temporary faucet for testnet use, intended to operate for two weeks.
 - Initial Lock Time set to 60 seconds for testing. Updated to 24 hrs after deployed.
+
+---
+
+## Minato Testnet Deployment - Batch Sender Contract
+
+Date of Deployment: December 16, 2024  
+Network: Minato Testnet  
+Contract Address: 0x06A30D6da94A8391d0B8c1C203496F03Fc28C0Bc
+Deployer Address: 0x1adAF26F6440ab7D7a237b49e1ceEf58f45F902a  
+Explorer Link: [View on Minato Explorer](https://soneium-minato.blockscout.com/address/0x06A30D6da94A8391d0B8c1C203496F03Fc28C0Bc?tab=contract)
+
+Initial Configuration:
+
+- Batch transfer tokens to multiple recipients.
+- tokenAddress The ERC20 token contract address.
+- recipients Array of recipient addresses.
+- amounts Array of token amounts corresponding to recipients.
+- Owner Address: 0x1adAF26F6440ab7D7a237b49e1ceEf58f45F902a
+
+Notes:
+
+- Batch transfer contract to send test tokens to prepare for move to Soneium.
+- Pause/enable function to disable/re-enable batch send functionality
+- Send to dead address to remove owner from batch sending after initial function is fulfilled.
 
 ---
 
