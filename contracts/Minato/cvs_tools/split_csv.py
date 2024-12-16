@@ -4,10 +4,9 @@ from decimal import Decimal, getcontext
 
 # Set Decimal precision to 18 places
 getcontext().prec = 18
-
 # Input file path
 input_csv = "cvs_tools/test-original-snapshot.csv"  # Input CSV file in cvs_tools
-output_folder = "../batches"  # Output folder for batch files
+output_folder = "./batches"  # Output folder for batch files
 batch_size = 50  # Number of rows per batch
 
 # Ensure output folder exists
