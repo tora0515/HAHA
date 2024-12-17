@@ -95,11 +95,11 @@ Notes:
 
 ## Minato Testnet Deployment - Batch Sender Contract
 
-Date of Deployment: December 16, 2024  
+Date of Deployment: December 17, 2024  
 Network: Minato Testnet  
-Contract Address: 0x06A30D6da94A8391d0B8c1C203496F03Fc28C0Bc
+Contract Address: 0x3CD92f8BC8fD2ADE1ae6E6655e58e55C2D35f7d7
 Deployer Address: 0x1adAF26F6440ab7D7a237b49e1ceEf58f45F902a  
-Explorer Link: [View on Minato Explorer](https://soneium-minato.blockscout.com/address/0x06A30D6da94A8391d0B8c1C203496F03Fc28C0Bc?tab=contract)
+Explorer Link: [View on Minato Explorer](https://soneium-minato.blockscout.com/address/0x3CD92f8BC8fD2ADE1ae6E6655e58e55C2D35f7d7?tab=contract)
 
 Initial Configuration:
 
