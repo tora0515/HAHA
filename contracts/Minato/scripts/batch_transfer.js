@@ -8,7 +8,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function main() {
   const batchFolder = "./batches"; // Folder containing batch files
   const tokenAddress = "0x1E8893B544CD6fC26BbA141Fdd8e808c1570A2D0"; // HMBT token address
-  const batchSenderAddress = "0x3CD92f8BC8fD2ADE1ae6E6655e58e55C2D35f7d7"; // Updated BatchSender address
+  const batchSenderAddress = "0xf3124d75d918eC64E6567BB2F699c6D9421CDdC8"; // Updated BatchSender address
   const delayBetweenBatches = 5000; // Delay in ms (5 seconds)
 
   // Get signer (deployer wallet)
