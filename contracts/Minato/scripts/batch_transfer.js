@@ -83,10 +83,16 @@ async function main() {
           continue;
         }
 
-        // Parse amount to 18 decimals
-        // Parse amount (already in raw units, so no 18-decimal adjustment)
-        const parsedAmount = ethers.BigNumber.from(cleanedAmount);
+        // Validate and convert amount to BigInt
+        if (!cleanedAmount || isNaN(cleanedAmount)) {
+          console.error(
+            `Invalid amount at row ${rowIndex + 1}: ${cleanedAmount}`
+          );
+          continue;
+        }
 
+        // Convert to BigInt
+        const parsedAmount = ethers.toBigInt(cleanedAmount);
         recipients.push(cleanedAddress);
         amounts.push(parsedAmount);
       } catch (error) {
@@ -95,6 +101,16 @@ async function main() {
         continue;
       }
     }
+
+    // Final validation of recipients and amounts
+    if (recipients.length === 0 || amounts.length === 0) {
+      console.error(`Error: No valid data found in batch ${batchFile}.`);
+      continue;
+    }
+
+    console.log("Validated recipients and amounts.");
+    console.log("Recipients:", recipients);
+    console.log("Amounts:", amounts);
 
     // Log balances before transfer
     const balanceBefore = await tokenContract.balanceOf(deployer.address);
@@ -105,10 +121,7 @@ async function main() {
       )} tokens`
     );
 
-    const totalBatchAmount = amounts.reduce(
-      (sum, amount) => sum.add(amount),
-      ethers.BigNumber.from(0)
-    );
+    const totalBatchAmount = amounts.reduce((sum, amount) => sum + amount, 0n);
 
     // Log the total batch amount
     console.log(
@@ -119,18 +132,17 @@ async function main() {
     );
 
     // Validate against the sender's balance
-    const deployerBalance = await tokenContract.balanceOf(deployer.address);
-    if (totalBatchAmount.gt(deployerBalance)) {
+    if (totalBatchAmount > balanceBefore) {
       console.error(
         `Error: Total batch amount (${ethers.formatUnits(
           totalBatchAmount,
           18
         )}) exceeds your current balance (${ethers.formatUnits(
-          deployerBalance,
+          balanceBefore,
           18
         )})`
       );
-      return; // Stop further execution for this batch
+      continue;
     }
 
     // Proceed with the batch transfer if validation passes
