@@ -28,13 +28,21 @@ burn_addresses = [
 df = df[~df[0].isin(burn_addresses)]  # Filter based on the first column (HolderAddress)
 print(f"Filtered out burn addresses. Remaining rows: {len(df)}")
 
+# Ensure balances are plain integers without scientific notation
+def clean_balance(balance):
+    try:
+        return str(balance).split(".")[0]  # Remove decimals (if any) and keep as string
+    except:
+        return "0"
+
+df[1] = df[1].apply(clean_balance)
+
 # Split the file into batches
 for i in range(0, len(df), batch_size):
     batch = df.iloc[i:i + batch_size]
     batch_filename = os.path.join(output_folder, f"batch_{i // batch_size + 1}.csv")
     
-    # Save batch file without headers and ensure values are saved as plain strings
-    batch[1] = batch[1].apply(lambda x: str(int(float(x))))  # Ensure no scientific notation
+    # Save batch file without headers and ensure balances are plain strings
     batch.to_csv(batch_filename, index=False, header=False, quoting=3)  # quoting=3 avoids quotes
     print(f"Created batch file: {batch_filename}")
 

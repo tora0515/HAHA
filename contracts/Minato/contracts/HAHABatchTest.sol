@@ -6,12 +6,12 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 // Contract for HAHA Minato Testnet Token with a fixed supply and burn mechanism
-contract HAHAMintaoBatchTest is ERC20, ERC20Burnable, Ownable {
+contract HAHAMintaoBatchTestTwo is ERC20, ERC20Burnable, Ownable {
     // Maximum supply cap, set to 100 trillion tokens
     uint256 private immutable _cap = 100_000_000_000_000 * 10 ** decimals();
 
     // Constructor to initialize token with name, symbol, and initial supply cap
-    constructor() ERC20("HAHA Minato Batch Send Test Token", "HMBT") Ownable(msg.sender) {
+    constructor() ERC20("HAHA Minato Batch Send Test Token 2", "HMBT2") Ownable(msg.sender) {
         _mint(msg.sender, _cap);
     }
 

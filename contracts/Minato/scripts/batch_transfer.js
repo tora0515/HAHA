@@ -29,27 +29,8 @@ async function main() {
     batchSenderAddress
   );
 
-  console.log("Initial token balance:", ethers.formatUnits(initialBalance, 18));
-  console.log(
-    "Current allowance for BatchSender contract:",
-    ethers.formatUnits(allowance, 18)
-  );
-
-  // Ensure sufficient allowance is set
-  const totalNeeded = ethers.parseUnits("1000000", 18); // Example amount to approve
-  if (allowance < totalNeeded) {
-    console.log("Approving tokens for BatchSender contract...");
-    const approveTx = await tokenContract.approve(
-      batchSenderAddress,
-      totalNeeded
-    );
-    await approveTx.wait();
-    console.log("Tokens approved successfully!");
-  }
-
-  // Create or clear the gas usage log file
-  const gasLogFile = path.join(__dirname, "gas_usage.log");
-  fs.writeFileSync(gasLogFile, "Batch,Gas Used\n"); // Clear previous log
+  console.log("Initial token balance (raw):", initialBalance.toString());
+  console.log("Allowance for BatchSender contract:", allowance.toString());
 
   // Process each batch file
   const batchFiles = fs
@@ -60,12 +41,9 @@ async function main() {
   for (const [index, batchFile] of batchFiles.entries()) {
     console.log(`Processing batch file: ${batchFile}`);
 
-    // Read the batch file
     const filePath = path.join(batchFolder, batchFile);
-    const data = fs.readFileSync(filePath, "utf8");
-    const rows = data.trim().split("\n"); // Reads all rows
+    const rows = fs.readFileSync(filePath, "utf8").trim().split("\n");
 
-    // Parse wallet addresses and token amounts
     const recipients = [];
     const amounts = [];
 
@@ -73,7 +51,7 @@ async function main() {
       try {
         const [address, amount] = row.split(",");
         const cleanedAddress = address.trim();
-        const cleanedAmount = amount.trim();
+        let cleanedAmount = amount.trim();
 
         // Validate Ethereum address
         if (!ethers.isAddress(cleanedAddress)) {
@@ -83,16 +61,15 @@ async function main() {
           continue;
         }
 
-        // Validate and convert amount to BigInt
-        if (!cleanedAmount || isNaN(cleanedAmount)) {
-          console.error(
-            `Invalid amount at row ${rowIndex + 1}: ${cleanedAmount}`
-          );
-          continue;
+        // Ensure the amount is treated as a clean BigInt
+        cleanedAmount = cleanedAmount.replace(/\s/g, ""); // Remove extra spaces
+        if (cleanedAmount.includes("E") || cleanedAmount.includes("e")) {
+          cleanedAmount = BigInt(
+            Number.parseFloat(cleanedAmount).toFixed(0)
+          ).toString();
         }
+        const parsedAmount = BigInt(cleanedAmount);
 
-        // Convert to BigInt
-        const parsedAmount = ethers.toBigInt(cleanedAmount);
         recipients.push(cleanedAddress);
         amounts.push(parsedAmount);
       } catch (error) {
@@ -110,46 +87,33 @@ async function main() {
 
     console.log("Validated recipients and amounts.");
     console.log("Recipients:", recipients);
-    console.log("Amounts:", amounts);
+    console.log(
+      "Amounts:",
+      amounts.map((a) => a.toString())
+    );
 
     // Log balances before transfer
     const balanceBefore = await tokenContract.balanceOf(deployer.address);
     console.log(
-      `Sender balance before transfer: ${ethers.formatUnits(
-        balanceBefore,
-        18
-      )} tokens`
+      `Sender balance before transfer (raw): ${balanceBefore.toString()}`
     );
 
     const totalBatchAmount = amounts.reduce((sum, amount) => sum + amount, 0n);
-
-    // Log the total batch amount
     console.log(
-      `Total tokens to transfer in this batch: ${ethers.formatUnits(
-        totalBatchAmount,
-        18
-      )} tokens`
+      `Total tokens to transfer in this batch: ${totalBatchAmount.toString()}`
     );
 
     // Validate against the sender's balance
     if (totalBatchAmount > balanceBefore) {
       console.error(
-        `Error: Total batch amount (${ethers.formatUnits(
-          totalBatchAmount,
-          18
-        )}) exceeds your current balance (${ethers.formatUnits(
-          balanceBefore,
-          18
-        )})`
+        `Error: Total batch amount (${totalBatchAmount.toString()}) exceeds your current balance (${balanceBefore.toString()})`
       );
       continue;
     }
 
-    // Proceed with the batch transfer if validation passes
-    console.log("Batch validated. Proceeding with transfer...");
-
-    // Call batchTransfer
+    // Proceed with the batch transfer
     try {
+      console.log("Calling batchTransfer...");
       const tx = await BatchSender.batchTransfer(
         tokenAddress,
         recipients,
@@ -157,10 +121,9 @@ async function main() {
       );
       const receipt = await tx.wait();
 
-      // Log gas usage
-      const gasUsed = receipt.gasUsed.toString();
-      fs.appendFileSync(gasLogFile, `${batchFile},${gasUsed}\n`);
-      console.log(`Batch ${batchFile} processed. Gas used: ${gasUsed}`);
+      console.log(
+        `Batch ${batchFile} processed successfully. Gas used: ${receipt.gasUsed.toString()}`
+      );
     } catch (error) {
       console.error(
         `Error during batch transfer for file ${batchFile}:`,
@@ -171,10 +134,7 @@ async function main() {
     // Log balances after transfer
     const balanceAfter = await tokenContract.balanceOf(deployer.address);
     console.log(
-      `Sender balance after transfer: ${ethers.formatUnits(
-        balanceAfter,
-        18
-      )} tokens`
+      `Sender balance after transfer (raw): ${balanceAfter.toString()}`
     );
 
     // Wait before processing the next batch
@@ -186,7 +146,7 @@ async function main() {
     }
   }
 
-  console.log("All batches processed. Gas usage logged in 'gas_usage.log'.");
+  console.log("All batches processed successfully.");
 }
 
 main()
