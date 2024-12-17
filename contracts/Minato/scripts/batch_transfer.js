@@ -103,6 +103,37 @@ async function main() {
       )} tokens`
     );
 
+    const totalBatchAmount = amounts.reduce(
+      (sum, amount) => sum.add(amount),
+      ethers.BigNumber.from(0)
+    );
+
+    // Log the total batch amount
+    console.log(
+      `Total tokens to transfer in this batch: ${ethers.formatUnits(
+        totalBatchAmount,
+        18
+      )} tokens`
+    );
+
+    // Validate against the sender's balance
+    const deployerBalance = await tokenContract.balanceOf(deployer.address);
+    if (totalBatchAmount.gt(deployerBalance)) {
+      console.error(
+        `Error: Total batch amount (${ethers.formatUnits(
+          totalBatchAmount,
+          18
+        )}) exceeds your current balance (${ethers.formatUnits(
+          deployerBalance,
+          18
+        )})`
+      );
+      return; // Stop further execution for this batch
+    }
+
+    // Proceed with the batch transfer if validation passes
+    console.log("Batch validated. Proceeding with transfer...");
+
     // Call batchTransfer
     try {
       const tx = await BatchSender.batchTransfer(
