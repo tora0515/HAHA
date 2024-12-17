@@ -7,19 +7,45 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
   const batchFolder = "./batches"; // Folder containing batch files
-  const tokenAddress = "0x1E8893B544CD6fC26BbA141Fdd8e808c1570A2D0"; // Replace with HMBT token address
-  const batchSenderAddress = "0x3CD92f8BC8fD2ADE1ae6E6655e58e55C2D35f7d7"; // Replace with BatchSender address
+  const tokenAddress = "0x1E8893B544CD6fC26BbA141Fdd8e808c1570A2D0"; // HMBT token address
+  const batchSenderAddress = "0x3CD92f8BC8fD2ADE1ae6E6655e58e55C2D35f7d7"; // Updated BatchSender address
   const delayBetweenBatches = 5000; // Delay in ms (5 seconds)
 
   // Get signer (deployer wallet)
   const [deployer] = await ethers.getSigners();
   console.log("Using deployer address:", deployer.address);
 
-  // Connect to BatchSender contract
+  // Connect to token and batch sender contracts
+  const tokenContract = await ethers.getContractAt("ERC20", tokenAddress);
   const BatchSender = await ethers.getContractAt(
     "BatchSender",
     batchSenderAddress
   );
+
+  // Check initial allowance and balance
+  const initialBalance = await tokenContract.balanceOf(deployer.address);
+  const allowance = await tokenContract.allowance(
+    deployer.address,
+    batchSenderAddress
+  );
+
+  console.log("Initial token balance:", ethers.formatUnits(initialBalance, 18));
+  console.log(
+    "Current allowance for BatchSender contract:",
+    ethers.formatUnits(allowance, 18)
+  );
+
+  // Ensure sufficient allowance is set
+  const totalNeeded = ethers.parseUnits("1000000", 18); // Example amount to approve
+  if (allowance < totalNeeded) {
+    console.log("Approving tokens for BatchSender contract...");
+    const approveTx = await tokenContract.approve(
+      batchSenderAddress,
+      totalNeeded
+    );
+    await approveTx.wait();
+    console.log("Tokens approved successfully!");
+  }
 
   // Create or clear the gas usage log file
   const gasLogFile = path.join(__dirname, "gas_usage.log");
@@ -57,15 +83,7 @@ async function main() {
           continue;
         }
 
-        // Parse amount and ensure it is a valid number
-        if (isNaN(cleanedAmount) || Number(cleanedAmount) <= 0) {
-          console.error(
-            `Invalid amount at row ${rowIndex + 1}: ${cleanedAmount}`
-          );
-          continue;
-        }
-
-        // Convert user-friendly amount to raw units (18 decimals)
+        // Parse amount to 18 decimals
         const parsedAmount = ethers.parseUnits(cleanedAmount, 18);
         recipients.push(cleanedAddress);
         amounts.push(parsedAmount);
@@ -76,21 +94,14 @@ async function main() {
       }
     }
 
-    // Log the inputs for this batch
-    console.log(`Sending to ${recipients.length} recipients...`);
-    console.log("Recipients:", recipients);
+    // Log balances before transfer
+    const balanceBefore = await tokenContract.balanceOf(deployer.address);
     console.log(
-      "Amounts:",
-      amounts.map((a) => a.toString())
+      `Sender balance before transfer: ${ethers.formatUnits(
+        balanceBefore,
+        18
+      )} tokens`
     );
-
-    // Validate the batch size
-    if (recipients.length === 0) {
-      console.warn(
-        `Warning: Batch ${batchFile} is empty. Skipping this batch.`
-      );
-      continue;
-    }
 
     // Call batchTransfer
     try {
@@ -111,6 +122,15 @@ async function main() {
         error
       );
     }
+
+    // Log balances after transfer
+    const balanceAfter = await tokenContract.balanceOf(deployer.address);
+    console.log(
+      `Sender balance after transfer: ${ethers.formatUnits(
+        balanceAfter,
+        18
+      )} tokens`
+    );
 
     // Wait before processing the next batch
     if (index < batchFiles.length - 1) {

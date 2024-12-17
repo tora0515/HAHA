@@ -43,7 +43,7 @@ contract BatchSender is Ownable {
             require(totalTransferred <= token.balanceOf(msg.sender), "Insufficient token balance");
             require(totalTransferred <= token.allowance(msg.sender, address(this)), "Insufficient allowance");
 
-            bool success = _safeTransfer(token, recipients[i], amounts[i]);
+            bool success = _safeTransferFrom(token, msg.sender, recipients[i], amounts[i]);
             if (success) {
                 emit TransferSuccess(msg.sender, recipients[i], amounts[i]);
             } else {
@@ -53,14 +53,15 @@ contract BatchSender is Ownable {
     }
 
     /**
-     * @dev Internal function to safely transfer tokens.
-     * @param token The ERC20 token instance.
-     * @param recipient The recipient address.
-     * @param amount The amount of tokens to transfer.
-     * @return success Whether the transfer succeeded.
-     */
-    function _safeTransfer(IERC20 token, address recipient, uint256 amount) internal returns (bool success) {
-        try token.transfer(recipient, amount) {
+    * @dev Internal function to safely transfer tokens using transferFrom.
+    * @param token The ERC20 token instance.
+    * @param sender The address from which tokens are transferred.
+    * @param recipient The recipient address.
+    * @param amount The amount of tokens to transfer.
+    * @return success Whether the transfer succeeded.
+    */
+    function _safeTransferFrom(IERC20 token, address sender, address recipient, uint256 amount) internal returns (bool success) {
+        try token.transferFrom(sender, recipient, amount) {
             return true;
         } catch {
             return false;
