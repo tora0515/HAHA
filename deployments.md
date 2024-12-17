@@ -97,9 +97,9 @@ Notes:
 
 Date of Deployment: December 17, 2024  
 Network: Minato Testnet  
-Contract Address: 0x3CD92f8BC8fD2ADE1ae6E6655e58e55C2D35f7d7
+Contract Address: 0xf3124d75d918eC64E6567BB2F699c6D9421CDdC8
 Deployer Address: 0x1adAF26F6440ab7D7a237b49e1ceEf58f45F902a  
-Explorer Link: [View on Minato Explorer](https://soneium-minato.blockscout.com/address/0x3CD92f8BC8fD2ADE1ae6E6655e58e55C2D35f7d7?tab=contract)
+Explorer Link: [View on Minato Explorer](https://soneium-minato.blockscout.com/address/0xf3124d75d918eC64E6567BB2F699c6D9421CDdC8?tab=contract)
 
 Initial Configuration:
 
