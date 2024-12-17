@@ -84,7 +84,9 @@ async function main() {
         }
 
         // Parse amount to 18 decimals
-        const parsedAmount = ethers.parseUnits(cleanedAmount, 18);
+        // Parse amount (already in raw units, so no 18-decimal adjustment)
+        const parsedAmount = ethers.BigNumber.from(cleanedAmount);
+
         recipients.push(cleanedAddress);
         amounts.push(parsedAmount);
       } catch (error) {
