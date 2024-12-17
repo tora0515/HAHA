@@ -46,12 +46,29 @@ async function main() {
     for (const [rowIndex, row] of rows.entries()) {
       try {
         const [address, amount] = row.split(",");
-        if (!ethers.isAddress(address.trim())) {
-          console.error(`Invalid address at row ${rowIndex + 1}: ${address}`);
+        const cleanedAddress = address.trim();
+        const cleanedAmount = amount.trim();
+
+        // Validate Ethereum address
+        if (!ethers.isAddress(cleanedAddress)) {
+          console.error(
+            `Invalid address at row ${rowIndex + 1}: ${cleanedAddress}`
+          );
           continue;
         }
-        recipients.push(address.trim());
-        amounts.push(ethers.parseUnits(amount.trim(), 18)); // Adjust decimals as needed
+
+        // Parse amount and ensure it is a valid number
+        if (isNaN(cleanedAmount) || Number(cleanedAmount) <= 0) {
+          console.error(
+            `Invalid amount at row ${rowIndex + 1}: ${cleanedAmount}`
+          );
+          continue;
+        }
+
+        // Convert user-friendly amount to raw units (18 decimals)
+        const parsedAmount = ethers.parseUnits(cleanedAmount, 18);
+        recipients.push(cleanedAddress);
+        amounts.push(parsedAmount);
       } catch (error) {
         console.error(`Error parsing row ${rowIndex + 1}: ${row}`);
         console.error(error);
@@ -73,12 +90,6 @@ async function main() {
         `Warning: Batch ${batchFile} is empty. Skipping this batch.`
       );
       continue;
-    }
-
-    if (recipients.length < 50) {
-      console.warn(
-        `Warning: Batch ${batchFile} has only ${recipients.length} recipients (less than 50). Proceeding anyway.`
-      );
     }
 
     // Call batchTransfer
