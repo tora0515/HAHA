@@ -1,4 +1,5 @@
-const { ethers } = require("hardhat");
+require("dotenv").config();
+const { ethers } = require("ethers");
 const fs = require("fs");
 const path = require("path");
 
@@ -6,26 +7,44 @@ const path = require("path");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
-  const batchFolder = "./batches"; // Folder containing batch files
-  const tokenAddress = "0x1E8893B544CD6fC26BbA141Fdd8e808c1570A2D0"; // HMBT token address
+  const batchFolder = "./batchsend/batches"; // Corrected folder path for JSON files
+  const tokenAddress = "0x97248d9fDC963381C9b68e27a8c0ba40B066bf17"; // HMBT2 token address
   const batchSenderAddress = "0xf3124d75d918eC64E6567BB2F699c6D9421CDdC8"; // Updated BatchSender address
   const delayBetweenBatches = 5000; // Delay in ms (5 seconds)
 
-  // Get signer (deployer wallet)
-  const [deployer] = await ethers.getSigners();
-  console.log("Using deployer address:", deployer.address);
+  // Get signer from private key
+  const wallet = new ethers.Wallet(process.env.PRIVATE_KEY);
+  const provider = new ethers.JsonRpcProvider(process.env.MINATO_RPC_URL);
+  const signer = wallet.connect(provider);
+
+  console.log("Using wallet address:", signer.address);
 
   // Connect to token and batch sender contracts
-  const tokenContract = await ethers.getContractAt("ERC20", tokenAddress);
-  const BatchSender = await ethers.getContractAt(
-    "BatchSender",
-    batchSenderAddress
+  const tokenContract = new ethers.Contract(
+    tokenAddress,
+    [
+      "function balanceOf(address account) view returns (uint256)",
+      "function allowance(address owner, address spender) view returns (uint256)",
+      "function decimals() view returns (uint8)",
+    ],
+    signer
+  );
+  const BatchSender = new ethers.Contract(
+    batchSenderAddress,
+    [
+      "function batchTransfer(address token, address[] calldata recipients, uint256[] calldata amounts)",
+    ],
+    signer
   );
 
+  // Get token decimals
+  const decimals = await tokenContract.decimals();
+  console.log(`Token decimals: ${decimals}`);
+
   // Check initial allowance and balance
-  const initialBalance = await tokenContract.balanceOf(deployer.address);
+  const initialBalance = await tokenContract.balanceOf(signer.address);
   const allowance = await tokenContract.allowance(
-    deployer.address,
+    signer.address,
     batchSenderAddress
   );
 
@@ -35,46 +54,34 @@ async function main() {
   // Process each batch file
   const batchFiles = fs
     .readdirSync(batchFolder)
-    .filter((file) => file.endsWith(".csv"));
+    .filter((file) => file.endsWith(".json"));
   console.log(`Found ${batchFiles.length} batch files.`);
 
   for (const [index, batchFile] of batchFiles.entries()) {
     console.log(`Processing batch file: ${batchFile}`);
 
     const filePath = path.join(batchFolder, batchFile);
-    const rows = fs.readFileSync(filePath, "utf8").trim().split("\n");
+    const batchData = JSON.parse(fs.readFileSync(filePath, "utf8"));
 
     const recipients = [];
     const amounts = [];
 
-    for (const [rowIndex, row] of rows.entries()) {
+    for (const entry of batchData) {
       try {
-        const [address, amount] = row.split(",");
-        const cleanedAddress = address.trim();
-        let cleanedAmount = amount.trim();
+        // Extract wallet address and balance
+        const { wallet, balance } = entry;
 
         // Validate Ethereum address
-        if (!ethers.isAddress(cleanedAddress)) {
-          console.error(
-            `Invalid address at row ${rowIndex + 1}: ${cleanedAddress}`
-          );
+        if (!ethers.isAddress(wallet)) {
+          console.error(`Invalid address: ${wallet}`);
           continue;
         }
 
-        // Ensure the amount is treated as a clean BigInt
-        cleanedAmount = cleanedAmount.replace(/\s/g, ""); // Remove extra spaces
-        if (cleanedAmount.includes("E") || cleanedAmount.includes("e")) {
-          cleanedAmount = BigInt(
-            Number.parseFloat(cleanedAmount).toFixed(0)
-          ).toString();
-        }
-        const parsedAmount = BigInt(cleanedAmount);
-
-        recipients.push(cleanedAddress);
-        amounts.push(parsedAmount);
+        // Add to recipients and amounts arrays
+        recipients.push(wallet);
+        amounts.push(BigInt(balance)); // No need for decimals as amounts are raw
       } catch (error) {
-        console.error(`Error parsing row ${rowIndex + 1}: ${row}`);
-        console.error(error);
+        console.error(`Error processing entry in batch ${batchFile}:`, error);
         continue;
       }
     }
@@ -87,13 +94,10 @@ async function main() {
 
     console.log("Validated recipients and amounts.");
     console.log("Recipients:", recipients);
-    console.log(
-      "Amounts:",
-      amounts.map((a) => a.toString())
-    );
+    console.log("Amounts:", amounts);
 
     // Log balances before transfer
-    const balanceBefore = await tokenContract.balanceOf(deployer.address);
+    const balanceBefore = await tokenContract.balanceOf(signer.address);
     console.log(
       `Sender balance before transfer (raw): ${balanceBefore.toString()}`
     );
@@ -106,7 +110,7 @@ async function main() {
     // Validate against the sender's balance
     if (totalBatchAmount > balanceBefore) {
       console.error(
-        `Error: Total batch amount (${totalBatchAmount.toString()}) exceeds your current balance (${balanceBefore.toString()})`
+        `Error: Total batch amount (${totalBatchAmount.toString()}) exceeds your current balance (${balanceBefore.toString()}).`
       );
       continue;
     }
@@ -129,10 +133,11 @@ async function main() {
         `Error during batch transfer for file ${batchFile}:`,
         error
       );
+      break; // Stop the script on error
     }
 
     // Log balances after transfer
-    const balanceAfter = await tokenContract.balanceOf(deployer.address);
+    const balanceAfter = await tokenContract.balanceOf(signer.address);
     console.log(
       `Sender balance after transfer (raw): ${balanceAfter.toString()}`
     );
