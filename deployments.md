@@ -22,22 +22,27 @@ This document records details of each deployment for HAHA Token and MamaGotchiGa
 
 ---
 
-## Minato Testnet Deployment - HAHA Batch Send Test Token Two HMBT2
+## Minato Testnet Deployment - HAHA Batch Send Test Token Three HMBT3
 
-**Date of Deployment**: December 16, 2024
+**Date of Deployment**: December 21, 2024
 **Network**: Minato Testnet  
-**Token Address**: 0x97248d9fDC963381C9b68e27a8c0ba40B066bf17  
+**Token Address**: 0x28E61137a0DeCDeE8C8Ab427D7Fd4F5fA387bBd8  
 **Deployer Address**: 0x1adAF26F6440ab7D7a237b49e1ceEf58f45F902a  
-**Explorer Link**: [View on Minato Explorer](https://soneium-minato.blockscout.com/token/0x97248d9fDC963381C9b68e27a8c0ba40B066bf17?tab=contract)  
+**Explorer Link**: [View on Minato Explorer](https://soneium-minato.blockscout.com/token/0x28E61137a0DeCDeE8C8Ab427D7Fd4F5fA387bBd8?tab=contract)  
 **Initial Supply**: 100 trillion HMBT2 tokens
 **Gas Used**: Transaction gas used (retrieved from the transaction receipt)
 
 ### Deployment Notes:
 
 - Deployed using Hardhat with Ethers.js v6.
-- Initial tests: HMB
-- Test Results: Error in batch send script result in small variations in token values being sent. Updated batch send script and use HMBT2 as new test token.
+- Initial tests: HMBT
+- Test Results: Error in batch send script result in small variations in token values being sent. Updated batch send script and use HMBT3 as new test token.
 - Deployment intended for testing purposes; No liquidity provided. Token exclusively created to test batch deployment.
+
+### Past Tokens
+
+- HMBT: 0x1E8893B544CD6fC26BbA141Fdd8e808c1570A2D0
+- HMBT2: 0x97248d9fDC963381C9b68e27a8c0ba40B066bf17
 
 ---
 
