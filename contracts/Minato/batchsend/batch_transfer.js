@@ -8,7 +8,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
   const batchFolder = "./batchsend/batches"; // Corrected folder path for JSON files
-  const tokenAddress = "0x97248d9fDC963381C9b68e27a8c0ba40B066bf17"; // HMBT2 token address
+  const tokenAddress = "0x28E61137a0DeCDeE8C8Ab427D7Fd4F5fA387bBd8"; // token address for token to be sent
   const batchSenderAddress = "0xf3124d75d918eC64E6567BB2F699c6D9421CDdC8"; // Updated BatchSender address
   const delayBetweenBatches = 5000; // Delay in ms (5 seconds)
 

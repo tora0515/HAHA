@@ -25,9 +25,9 @@ try:
     with open(output_json, "w") as json_file:
         json.dump(valid_wallets, json_file, indent=4)
     print(f"Successfully saved {len(valid_wallets)} wallet addresses to '{output_json}'")
-    print(f"Expected number of addresses: 1361")
+    print(f"Expected number of addresses: 1355")
     print(f"Actual number of addresses saved: {len(valid_wallets)}")
-    if len(valid_wallets) != 1361:
+    if len(valid_wallets) != 1355:
         print("Warning: The number of addresses saved does not match the expected count!")
 except Exception as e:
     print(f"Error saving to JSON file: {e}")

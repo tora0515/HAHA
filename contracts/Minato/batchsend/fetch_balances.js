@@ -19,6 +19,13 @@ const ERC20_ABI = [
   "function balanceOf(address account) view returns (uint256)",
 ];
 
+// Helper to get current UTC time
+function getUTCTime() {
+  return new Date().toISOString(); // Returns ISO string in UTC
+}
+
+let scriptStartTime = getUTCTime(); // Initialize the start time here
+
 // Main function
 async function fetchBalances() {
   try {
@@ -73,4 +80,14 @@ async function fetchBalances() {
   }
 }
 
-fetchBalances();
+// Run the main function and log start/end times at the end
+fetchBalances()
+  .then(() => {
+    console.log(`Script started at: ${scriptStartTime}`);
+    console.log(`Script finished at: ${getUTCTime()}`);
+  })
+  .catch((err) => {
+    console.error("Unhandled error in script:", err);
+    console.log(`Script started at: ${scriptStartTime}`);
+    console.log(`Script finished at: ${getUTCTime()}`);
+  });
