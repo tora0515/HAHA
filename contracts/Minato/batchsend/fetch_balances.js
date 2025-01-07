@@ -1,11 +1,13 @@
 const fs = require("fs");
 const ethers = require("ethers");
+const { parse } = require("json2csv"); // For converting JSON to CSV
 
 // Input file
 const inputFilePath = "./batchsend/holders_list.json";
 // Output files
 const outputFilePath = "./batchsend/holders_balances.json";
 const zeroBalanceLogPath = "./batchsend/zero_balances.log";
+const csvOutputFilePath = "./batchsend/holders_snapshot.csv"; // New CSV output file
 
 // Contract and network settings
 const RPC_URL = "https://rpc.startale.com/astar-zkevm";
@@ -80,11 +82,35 @@ async function fetchBalances() {
   }
 }
 
-// Run the main function and log start/end times at the end
+// Additional function to convert balances to human-readable CSV
+function createCsvFromBalances() {
+  try {
+    console.log(`Reading data from ${outputFilePath}...`);
+    const balances = JSON.parse(fs.readFileSync(outputFilePath, "utf8"));
+
+    // Convert raw balances (10^18) to human-readable format
+    const humanReadableBalances = balances.map(({ wallet, balance }) => ({
+      wallet,
+      balance: ethers.formatUnits(balance, 18), // Converts from wei to ether (human-readable)
+    }));
+
+    // Convert JSON to CSV
+    const csv = parse(humanReadableBalances, { fields: ["wallet", "balance"] });
+
+    // Save the CSV file
+    fs.writeFileSync(csvOutputFilePath, csv);
+    console.log(`Human-readable balances saved to ${csvOutputFilePath}`);
+  } catch (err) {
+    console.error("Error creating CSV file:", err);
+  }
+}
+
+// Run the main function and append CSV generation
 fetchBalances()
   .then(() => {
     console.log(`Script started at: ${scriptStartTime}`);
     console.log(`Script finished at: ${getUTCTime()}`);
+    createCsvFromBalances(); // Call the CSV generation function after fetchBalances
   })
   .catch((err) => {
     console.error("Unhandled error in script:", err);

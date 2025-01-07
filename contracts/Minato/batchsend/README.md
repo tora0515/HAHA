@@ -83,6 +83,8 @@ This will take some time. (record start and end time printed at the end of the l
   **Action Required**: Check the `zero_balances.txt` file and review it to ensure accuracy.
   **Remove all zero ballance wallets**
 
+  **NOTE**: Holder's snapshot is saved in /batchsend/holders_snapshot.csv. Save this file in google drive and provide link to socials.
+
 ---
 
 ### 5. Split Batches
