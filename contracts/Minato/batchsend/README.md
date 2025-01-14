@@ -10,8 +10,10 @@ This README provides step-by-step instructions for performing batch transfers of
 4. **Private Key**: Add your private key and RPC URL to the `.env` file in the following format:
    ```
    PRIVATE_KEY=<your-private-key>
-   MINATO_RPC_URL=https://rpc.startale.com/astar-zkevm
+   MINATO_RPC_URL=https://rpc.startale.com/astar-zkevm**
    ```
+
+**Make sure to allow HAHA to be spent by Batchsend Contract**
 
 ---
 
@@ -56,6 +58,8 @@ Activate the Python virtual environment and run the script to extract holder add
 
    You can ignore the expected number warning (was used for testing) But make sure the Actual number of addresses saved equals the holders less any exclusions from step 1.
 
+   As of Jan 8, there are 8 wallets to remove during the cleansing step. Make sure the Actual number of addresses saved is 6 less thant the total holders at snapshot.
+
 3. Deactivate the environment after processing:
    ```bash
    deactivate
@@ -83,7 +87,11 @@ This will take some time. (record start and end time printed at the end of the l
   **Action Required**: Check the `zero_balances.txt` file and review it to ensure accuracy.
   **Remove all zero ballance wallets**
 
-  **NOTE**: Holder's snapshot is saved in /batchsend/holders_snapshot.csv. Save this file in google drive and provide link to socials.
+  **NOTE**:
+
+  - Holder's snapshot is saved in /batchsend/holders_snapshot.csv. Save this file in google drive and provide link to socials.
+
+  - Make sure wallet numbers and total HAHA match input file.
 
 ---
 

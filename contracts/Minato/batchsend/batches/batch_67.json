@@ -1,0 +1,82 @@
+[
+  {
+    "wallet": "0x48cA39FFED85B892e282716aaB95b932AcE012Ee",
+    "balance": "226196913923577047968877"
+  },
+  {
+    "wallet": "0xFd778a71D95fa5DF4a75b4C6CCBF885d236B6667",
+    "balance": "10000000000000000000000"
+  },
+  {
+    "wallet": "0x5f1bF06BA6aeB4396f04745121f6C420bfa2a588",
+    "balance": "1000000000000000000000"
+  },
+  {
+    "wallet": "0x5636417FBC0618fd6b46216405AFacB392729eC0",
+    "balance": "4353313002026556727"
+  },
+  {
+    "wallet": "0xb680c8F33f058163185AB6121F7582BAb57Ef8a7",
+    "balance": "2000000000000000000"
+  },
+  {
+    "wallet": "0xCBAB8BDeF5f0c75e9dB6e5cf169331eDE41420F8",
+    "balance": "1000000000000000000"
+  },
+  {
+    "wallet": "0x8e6987D009DF1bF4cA10d15daCa31fE9936FaDD8",
+    "balance": "986827000440751610"
+  },
+  {
+    "wallet": "0xdD4080398480941266D2af10d56e8B49868df133",
+    "balance": "954876127827025166"
+  },
+  {
+    "wallet": "0xf4ec22CBD6D3eb8A9F84d980F79c4f2A3e46c398",
+    "balance": "917499031079443734"
+  },
+  {
+    "wallet": "0x930147D8B1dFac055045D8c5443b1010fF332f68",
+    "balance": "751104499373345392"
+  },
+  {
+    "wallet": "0xA68AeA175f298777aEf4afaD4602b37c2154A209",
+    "balance": "748263172544428456"
+  },
+  {
+    "wallet": "0xc631a97e154bB5e005DF7F04eb2Bc9977C94139A",
+    "balance": "664666832352804666"
+  },
+  {
+    "wallet": "0xA0257280dD7d8e172dFeC8f5D05c59e52b36Acbd",
+    "balance": "519615582403427128"
+  },
+  {
+    "wallet": "0xA3c0515a4384EdF16f11AE5e64D7F086a142e2C9",
+    "balance": "496916171611837515"
+  },
+  {
+    "wallet": "0x5AE853F28dD068f9aE71D6769FA74f7c2d2fc3b0",
+    "balance": "355990930848656412"
+  },
+  {
+    "wallet": "0xFA2b6215530aaE393315443E1934C82bf103aca0",
+    "balance": "229249744536946496"
+  },
+  {
+    "wallet": "0x22BDd4cCB753Ce4E6815979c6198e1E1bCf6193A",
+    "balance": "178592262859616116"
+  },
+  {
+    "wallet": "0x7BC5953e31694e097A0062b9986310905bAf48b4",
+    "balance": "125017319059038475"
+  },
+  {
+    "wallet": "0xF98705b8bC223d96B1013b84361Df6A18bA12089",
+    "balance": "2092052071950532"
+  },
+  {
+    "wallet": "0xB044312C6124cef6EA219C0281fD295959d97137",
+    "balance": "9368247431409"
+  }
+]
