@@ -142,3 +142,29 @@ Notes:
 - Deployed using Hardhat with Ethers.js v6.
 - Testing carried out on Minato testnet (see above)
 - Token will be paired with ASTR on Soneium. ASTR will be withdrawn from Astar zkEVM LP and bridged to Astar EVM then to Soneium for pairing. Liquidity to be provided on QuickSwap.
+
+---
+
+## Soneium Mainnet Deployment - Batch Sender Contract
+
+Date of Deployment: January 16, 2025  
+Network: Soneium Mainnet
+Contract Address: 0xFc53306FAAd5583Fb3985622189e260e786035ea
+Deployer Address: 0xeA9c9404422E2e09b5e4872A6FEa1311Fef46c0D  
+Explorer Link: [View on Soneium Blockscout](https://soneium.blockscout.com/token/0xFc53306FAAd5583Fb3985622189e260e786035ea)
+
+Initial Configuration:
+
+- Batch transfer tokens to multiple recipients.
+- tokenAddress is the ERC20 token contract address.
+- recipients Array of recipient addresses.
+- amounts Array of token amounts corresponding to recipients.
+- Owner Address: 0xeA9c9404422E2e09b5e4872A6FEa1311Fef46c0D
+
+Notes:
+
+- Batch transfer contract to send equivalent Soneium HAHA tokens to Astar zkEVM HAHA holders as at specific snapshot date.
+- Pause/enable function to disable/re-enable batch send functionality
+- Can send to dead address to remove owner from batch sending after initial function is fulfilled.
+
+---
