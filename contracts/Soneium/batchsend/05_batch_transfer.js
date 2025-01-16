@@ -8,8 +8,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
   const batchFolder = "./batchsend/batches"; // Corrected folder path for JSON files
-  const tokenAddress = ""; // HAHA Token Address, Input Soneium addr once deployed
-  const batchSenderAddress = ""; // Updated BatchSender address once deployed on Soneium
+  const tokenAddress = "0xA8FeAae65C44B458A16Ea4E709036A2ee85d073A"; // HAHA Token Address, Input Soneium addr once deployed
+  const batchSenderAddress = "0xFc53306FAAd5583Fb3985622189e260e786035ea"; // Updated BatchSender address once deployed on Soneium
   const delayBetweenBatches = 5000; // Delay in ms (5 seconds)
 
   // Get signer from private key
