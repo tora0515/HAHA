@@ -4,33 +4,31 @@ require("dotenv").config({ path: __dirname + "/.env" });
 require("@nomicfoundation/hardhat-verify");
 
 module.exports = {
-  solidity: "0.8.22",
+  solidity: "0.8.22", // Update Solidity version if necessary
   networks: {
-    soneium: {
-      url: process.env.SONEIUM_RPC_URL, // Loads from .env
-      accounts: [process.env.PRIVATE_KEY], // Loads from .env
+    "soneium-network": {
+      url: process.env.SONEIUM_RPC_URL, // Replace with your Soneium RPC URL in .env
+      accounts: [process.env.PRIVATE_KEY], // Replace with your private key in .env
     },
   },
-
   etherscan: {
     apiKey: {
-      soneium: "abc", // Blockscout doesn’t require a real API key, but a non-empty string is necessary.
+      "soneium-network": "empty", // Use an empty API key as per Soneium's BlockScout settings
     },
     customChains: [
       {
-        network: "soneium",
-        chainId: process.env.SONEIUM_CHAIN_ID,
+        network: "soneium-network",
+        chainId: 1868, // Soneium chain ID
         urls: {
-          apiURL: "https://soneium.blockscout.com/api",
-          browserURL: "https://soneium.blockscout.com/",
+          apiURL: "https://soneium.blockscout.com/api", // Soneium BlockScout API URL
+          browserURL: "https://soneium.blockscout.com", // Soneium BlockScout browser URL
         },
       },
     ],
   },
-
   paths: {
-    artifacts: "./artifacts", // Output path for compiled contracts
-    sources: "./contracts", // Path to your Solidity contracts
-    cache: "./cache", // Path for cached builds
+    artifacts: "./artifacts",
+    cache: "./cache",
+    sources: "./contracts",
   },
 };

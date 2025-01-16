@@ -4,6 +4,8 @@ This document records details of each deployment for HAHA Token and MamaGotchiGa
 
 ---
 
+.
+
 ## Minato Testnet Deployment - HAHA Token
 
 **Date of Deployment**: November 5, 2024
@@ -18,7 +20,7 @@ This document records details of each deployment for HAHA Token and MamaGotchiGa
 
 - Deployed using Hardhat with Ethers.js v6.
 - Initial tests confirmed successful burn and supply cap functionalities.
-- Deployment intended for testing purposes; testnet ASTR will be provided for liquidity at a later date.
+- Deployment intended for testing purposes; testnet ASTR will be provided for liquidity at a later date
 
 ---
 
@@ -125,4 +127,18 @@ Notes:
 
 ## Soneium Deployments
 
-_(Keep this section empty until you deploy on mainnet. Copy the relevant sections and update accordingly.)_
+## Soneium Mainnet Deployment - Mother of Memes (HAHA) Token
+
+**Date of Deployment**: 15 Jan 2025
+**Network**: Soneium  
+**Token Address**: 0xA8FeAae65C44B458A16Ea4E709036A2ee85d073A  
+**Deployer Address**: 0xeA9c9404422E2e09b5e4872A6FEa1311Fef46c0D  
+**Explorer Link**: [View on Soneium Blockscout](https://soneium.blockscout.com/token/0xA8FeAae65C44B458A16Ea4E709036A2ee85d073A)  
+**Initial Supply**: 100 trillion HAHA tokens  
+**Gas Used**: Transaction gas used (retrieved from the transaction receipt)
+
+### Deployment Notes:
+
+- Deployed using Hardhat with Ethers.js v6.
+- Testing carried out on Minato testnet (see above)
+- Token will be paired with ASTR on Soneium. ASTR will be withdrawn from Astar zkEVM LP and bridged to Astar EVM then to Soneium for pairing. Liquidity to be provided on QuickSwap.
