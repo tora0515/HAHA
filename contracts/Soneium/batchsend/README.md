@@ -62,14 +62,14 @@ Activate the Python virtual environment and run the script to extract holder add
 
    You can ignore the expected number warning (was used for testing) But make sure the Actual number of addresses saved equals the holders less any exclusions from step 1.
 
-   As of Jan 8, there are 8 wallets to remove during the cleansing step. Make sure the Actual number of addresses saved is 6 less thant the total holders at snapshot.
+   As of Jan 25, there are 6 wallets to remove during the cleansing step. Make sure the Actual number of addresses saved is 6 less thant the total holders at snapshot. Time of snapshot: 1343 wallets, less 6, 1337 wallets to transfer to.
 
 3. Deactivate the environment after processing:
    ```bash
    deactivate
    ```
 
-This will create `holders_list.json` in the `batchsend` directory.
+This will create `02_holders_list.json` in the `batchsend` directory.
 
 ---
 
@@ -89,7 +89,7 @@ This will take some time. (record start and end time printed at the end of the l
   2. **`out_03_zero_balances.txt`**: Lists all addresses with zero balance.
 
   **Action Required**: Check the `zero_balances.txt` file and review it to ensure accuracy.
-  **Remove all zero ballance wallets**
+  **Remove all zero ballance wallets** This may occur due to timing: reading balances from the block takes time, there may be a sell during this time that zero's a wallet. Make sure to check
 
   **NOTE**:
 
@@ -116,7 +116,7 @@ node batchsend/04_split_batches.js
 
 **Approve Wallet**
 
-0. Copy the batchsender address: 0xf3124d75d918eC64E6567BB2F699c6D9421CDdC8 (Minato, need to change for Soneium)
+0. Copy the batchsender address: 0xFc53306FAAd5583Fb3985622189e260e786035ea (Current: Soneium contract)
 
 1. Go to https://soneium.blockscout.com/ and search for the token you are sending
 2. Connect the token holding wallet

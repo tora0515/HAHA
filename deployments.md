@@ -151,7 +151,7 @@ Date of Deployment: January 16, 2025
 Network: Soneium Mainnet
 Contract Address: 0xFc53306FAAd5583Fb3985622189e260e786035ea
 Deployer Address: 0xeA9c9404422E2e09b5e4872A6FEa1311Fef46c0D  
-Explorer Link: [View on Soneium Blockscout](https://soneium.blockscout.com/token/0xFc53306FAAd5583Fb3985622189e260e786035ea)
+Explorer Link: [View on Soneium Blockscout](https://soneium.blockscout.com/address/0xFc53306FAAd5583Fb3985622189e260e786035ea)
 
 Initial Configuration:
 
